@@ -50,34 +50,39 @@ guy <- guy |>
 
 
 # DOUBLONS ID : suppression
-juv <- !juv[juv$ID %in% ("2.6.4.5","11.8.10.NA","2.9.6.2","4.5.8.10","4.6.10.4","5.3.8.52",
-                         "5.4.6.6","5.5.7.51","5.6.3.8","5.6.6.4","6.9.9.58","8.6.10.6","8.6.4.9"), ]
-
-
+juv <- juv[!juv$ID %in% c(
+  "2.6.4.5", "11.8.10.NA", "2.9.6.2", "4.5.8.10",
+  "4.6.10.4", "5.3.8.52", "5.4.6.6", "5.5.7.51",
+  "5.6.3.8", "5.6.6.4", "6.9.9.58", "8.6.10.6","8.6.4.9"), ] 
 
 ```
 
-## Variable calculation
+# Variable calculation
+
+## DBH_max
 
 ```{r}
-
-#DBH_max
-
 guy_max <- guy %>% group_by(sp) %>% summarise(DBH_max = mean(quantile(DBH, probs=0.95))) 
 juv <- left_join(juv, guy_max, by="sp") |> 
   mutate(D02=as.numeric(D02)) |> 
   mutate(H05=as.numeric(H05)) |> 
   mutate(H08=as.numeric(H08)) |> 
   mutate(H13=as.numeric(H13))
-  
+```
 
+## Annual Growth Rate
 
-#Annual Growth Rate
+```{r}
 juvAGR <- juv |> 
   mutate(AGRD93_92 = D93-D92,AGRD95_93 = (D95-D93)/2, AGRD02_95 = (D02-D95)/7,AGRD05_02 = (D05-D02)/3,AGRD08_05 = (D08-D05)/3,AGRD13_08 = (D13-D08)/5,AGRD16_13 = (D16-D13)/3) |> 
   mutate(AGRH08_05 = (H08-H05)/3,AGRH13_08 = (H13-H08)/5,AGRH16_13 = (H16-H13)/3) 
+```
 
-#présence/absence (1/0)
+## Species Distribution
+
+### Presence/Absence
+
+```{r}
 juvP <- juv |> # Calcul présence absence de chaque individu à chaque année
   mutate(P92 = ifelse(!is.na(D92),1,0)) |> #Si il n'y a pas de mesure la première année on considère que l'ind n'était pas encore considére
   mutate(P93 = ifelse(C93=="M"&substring(CG,7,9)!="RES"| C93!= "REC"&P92==0,0,1)) |> #L'ind est absent à l'année N: si il y a marqué Mort dans le commentaire ET qu'il n'a pas ressucité OU si ce n'est pas une recrue et qu'il était marqué absent l'année d'avant
@@ -87,21 +92,23 @@ juvP <- juv |> # Calcul présence absence de chaque individu à chaque année
   mutate(P08 = ifelse(C08=="M"&substring(CG,7,9)!="RES"|C08!="REC"&P05==0,0,1)) |>
   mutate(P13 = ifelse(C13=="M"&substring(CG,7,9)!="RES"|C13!="REC"&P08==0,0,1)) |>
   mutate(P16 = ifelse(C16=="M"&substring(CG,7,9)!="RES"|C16!="REC"&P13==0,0,1)) 
+```
 
-#Abondance
+### Abondance
 
+```{r}
 juvAb <- juvP |> #Calcul de l'abondance par placette et par espèce -> peut être faire une abondance relative ?
   group_by(Placette,sp) |> 
   summarise(Ab92=sum(P92),Ab93=sum(P93),Ab95=sum(P95),Ab02=sum(P02),Ab05=sum(P05),Ab08=sum(P08),Ab13=sum(P13),Ab16=sum(P16))
+```
 
+## NCI
 
-# /!\ Nécessite les doublons ID supprimés
-
+```{r}
 #data_NCI = data guyafor pour l'année d'intérêt
 data_NCI92 <- guy |> 
   filter(CensusYear == 1992, CodeAlive==TRUE) |> #Filtre sur l'année pour laquelle vous voulez calculer le NCI 
   select(idTree,Xutm,Yutm,CensusYear, DBH) #Sélection des variables d'intérêt
-
 
 x = c() #Initialisation du vecteur nul qui stockera les NCI calculés
 for (ind in 1:nrow(juv)){
@@ -118,7 +125,7 @@ NCI92 <- cbind(juv,x) |> # On récupère le vecteur comprenant tous les NCI dans
 
 
 
-### Ci-après : copié collé pour les 8 autres années de relevé de indéniles. ###
+
 #1993
 data_NCI93 <- guy |> 
   filter(CensusYear == 1993, CodeAlive==TRUE) |> #Filtre sur l'année pour laquelle vous voulez calculer le NCI 
@@ -270,10 +277,11 @@ juv_NCI <- left_join(juv_NCI, NCI05, by="ID")
 juv_NCI <- left_join(juv_NCI, NCI08, by="ID")
 juv_NCI <- left_join(juv_NCI, NCI13, by="ID")
 juv_NCI <- left_join(juv_NCI, NCI16, by="ID")
-
 ```
 
 ## Spatial analysis
+
+Pitié scinder ce gros chunk en plusieurs petits avec des commentaires **hors du chunk**
 
 ```{r}
 
@@ -304,7 +312,8 @@ st_crs(juv_placette)= 2972
 juv_buffer <- juv_placette |> 
   st_buffer(dist=20)
 
-lidar2004 <- rast("Projet EFT 2026/Données/Spatial/CHM2004_3.93_filled_1mres.tif")
+
+lidar2004 <- rast("donnees/Spatial/CHM2004_3.93_filled_1mres.tif")
 values(lidar2004) <- ifelse(values(lidar2004)<10, 1, 0)
 lidar2004 <- ifel(lidar2004==1, 1, NA) 
 patch <- patches(lidar2004, directions=8)
@@ -428,8 +437,13 @@ juv_lidar <- juv_lidar |>
 
 ## jSDM
 
+Creation of abondance dataset and objects required for the hmsc function :
+
 ```{r}
 #install.packages("Hmsc")
 library(Hmsc)
-```
 
+juv2016 <- juv[!is.na(juv$D16), ]
+
+Abondance2016 <- as.data.frame.matrix(table(juv2016$Placette, juv2016$sp))
+```
