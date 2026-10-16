@@ -1,0 +1,435 @@
+---
+title: "Projet Juvenile"
+format: html
+editor: visual
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document.
+To learn more about Quarto see <https://quarto.org>.
+
+## Library
+
+```{r}
+library(tidyverse)
+library(terra)
+library(sf)
+library(ggplot2)
+library(units)
+```
+
+## Tidying
+
+```{r}
+
+guy <- read.csv("donnees/BD/Paracou_1_a_12_1990_a_2018.csv", header= TRUE)
+juv <- read.csv("donnees/BD/arbres_INRA_nv_coord_verif.csv", header = TRUE,fileEncoding = "latin1")
+
+
+juv <- juv |> 
+  select("Placette","ID","PAR","X_UTM_Arbre_VRAI","Y_UTM_Arbre_VRAI","X_UTM_Placette","Y_UTM_Placette","AZIM",13:43) |> 
+  mutate(sp=paste(Genus,Species,sep = " ")) |> # Creating one column for species name
+  filter(!is.na(X_UTM_Arbre_VRAI),!is.na(Y_UTM_Arbre_VRAI)) #Enleve les arbres   dont la localisation n'est pas inscrite
+  
+
+juv[4400,23]="" #suppressing NA in comment
+juv[4400,27]=""
+juv[4400,31]=""
+juv[4399,31]=""
+juv[6579,31]=""
+juv[1160,19]="REC" # Adding REC to trees with a diameter but never indicated as REC
+juv[1203,19]="REC"
+juv[5680,19]="REC"
+
+guy <- guy |> 
+  select("Plot","TreeFieldNum","idTree","Xutm","Yutm","Family","Genus","Species","BotaCertainty","CensusYear","CensusDate","CodeAlive","MeasCode","Circ","CircCorr") |> 
+  mutate(sp=paste(Genus,Species,sep = " ")) |> 
+  mutate(CircCorr=ifelse(is.na(CircCorr),Circ,CircCorr)) |> 
+  mutate(DBH=CircCorr/pi)
+
+
+# DOUBLONS ID : suppression
+juv <- !juv[juv$ID %in% ("2.6.4.5","11.8.10.NA","2.9.6.2","4.5.8.10","4.6.10.4","5.3.8.52",
+                         "5.4.6.6","5.5.7.51","5.6.3.8","5.6.6.4","6.9.9.58","8.6.10.6","8.6.4.9"), ]
+
+
+
+```
+
+## Variable calculation
+
+```{r}
+
+#DBH_max
+
+guy_max <- guy %>% group_by(sp) %>% summarise(DBH_max = mean(quantile(DBH, probs=0.95))) 
+juv <- left_join(juv, guy_max, by="sp") |> 
+  mutate(D02=as.numeric(D02)) |> 
+  mutate(H05=as.numeric(H05)) |> 
+  mutate(H08=as.numeric(H08)) |> 
+  mutate(H13=as.numeric(H13))
+  
+
+
+#Annual Growth Rate
+juvAGR <- juv |> 
+  mutate(AGRD93_92 = D93-D92,AGRD95_93 = (D95-D93)/2, AGRD02_95 = (D02-D95)/7,AGRD05_02 = (D05-D02)/3,AGRD08_05 = (D08-D05)/3,AGRD13_08 = (D13-D08)/5,AGRD16_13 = (D16-D13)/3) |> 
+  mutate(AGRH08_05 = (H08-H05)/3,AGRH13_08 = (H13-H08)/5,AGRH16_13 = (H16-H13)/3) 
+
+#présence/absence (1/0)
+juvP <- juv |> # Calcul présence absence de chaque individu à chaque année
+  mutate(P92 = ifelse(!is.na(D92),1,0)) |> #Si il n'y a pas de mesure la première année on considère que l'ind n'était pas encore considére
+  mutate(P93 = ifelse(C93=="M"&substring(CG,7,9)!="RES"| C93!= "REC"&P92==0,0,1)) |> #L'ind est absent à l'année N: si il y a marqué Mort dans le commentaire ET qu'il n'a pas ressucité OU si ce n'est pas une recrue et qu'il était marqué absent l'année d'avant
+  mutate(P95 = ifelse(C95=="M"&substring(CG,7,9)!="RES"|C95!="REC"&P93==0,0,1)) |>  # ATTENTION: si on ajoute 2026 il faudra faire attention aux arbres ressucité puis remort!
+  mutate(P02 = ifelse(C02=="M"&substring(CG,7,9)!="RES"|C02!="REC"&P95==0,0,1)) |>
+  mutate(P05 = ifelse(C05=="M"&substring(CG,7,9)!="RES"|C05!="REC"&P02==0,0,1)) |># which(is.na(juv$D95)&!is.na(juv$D93)) pas mal d'ind qui ont n'ont pas de mesures à l'année n mais sont noté morts qu'à l'année n+1
+  mutate(P08 = ifelse(C08=="M"&substring(CG,7,9)!="RES"|C08!="REC"&P05==0,0,1)) |>
+  mutate(P13 = ifelse(C13=="M"&substring(CG,7,9)!="RES"|C13!="REC"&P08==0,0,1)) |>
+  mutate(P16 = ifelse(C16=="M"&substring(CG,7,9)!="RES"|C16!="REC"&P13==0,0,1)) 
+
+#Abondance
+
+juvAb <- juvP |> #Calcul de l'abondance par placette et par espèce -> peut être faire une abondance relative ?
+  group_by(Placette,sp) |> 
+  summarise(Ab92=sum(P92),Ab93=sum(P93),Ab95=sum(P95),Ab02=sum(P02),Ab05=sum(P05),Ab08=sum(P08),Ab13=sum(P13),Ab16=sum(P16))
+
+
+# /!\ Nécessite les doublons ID supprimés
+
+#data_NCI = data guyafor pour l'année d'intérêt
+data_NCI92 <- guy |> 
+  filter(CensusYear == 1992, CodeAlive==TRUE) |> #Filtre sur l'année pour laquelle vous voulez calculer le NCI 
+  select(idTree,Xutm,Yutm,CensusYear, DBH) #Sélection des variables d'intérêt
+
+
+x = c() #Initialisation du vecteur nul qui stockera les NCI calculés
+for (ind in 1:nrow(juv)){
+  NC <- data_NCI92 |>
+    mutate(dist_ij = sqrt((juv$X_UTM_Placette[ind]-Xutm)^2 + (juv$Y_UTM_Placette[ind] - Yutm)^2)) #Création d'un champ de distance au centre de la placette dans le tableau NC
+  NCI92 = sum((NC$DBH[which(NC$dist_ij < 20)])^2 * exp(-0.25*NC$dist_ij[which(NC$dist_ij < 20)]))  #Calcul du NCI en prenant uniquement les arbres à moins de 20 m u centre de la placette
+  x <- c(x,NCI92) # Stock du NCI calculé
+}
+
+NCI92 <- cbind(juv,x) |> # On récupère le vecteur comprenant tous les NCI dans notre jeu de donné et on convertit en m² (valeur en cm² initialement et ça fais des gros chiffres)
+  rename(NCI92 = x) |>
+  mutate(NCI92 = NCI92/10000) |>
+  select(ID,NCI92)
+
+
+
+### Ci-après : copié collé pour les 8 autres années de relevé de indéniles. ###
+#1993
+data_NCI93 <- guy |> 
+  filter(CensusYear == 1993, CodeAlive==TRUE) |> #Filtre sur l'année pour laquelle vous voulez calculer le NCI 
+  select(idTree,Xutm,Yutm,CensusYear, DBH) #Sélection des variables d'intérêt
+
+
+x = c() #Initialisation du vecteur nul qui stockera les NCI calculés
+for (ind in 1:nrow(juv)){
+  NC <- data_NCI93 |>
+    mutate(dist_ij = sqrt((juv$X_UTM_Placette[ind]-Xutm)^2 + (juv$Y_UTM_Placette[ind] - Yutm)^2)) #Création d'un champ de distance au centre de la placette dans le tableau NC
+  NCI93 = sum((NC$DBH[which(NC$dist_ij < 20)])^2 * exp(-0.25*NC$dist_ij[which(NC$dist_ij < 20)]))  #Calcul du NCI en prenant uniquement les arbres à moins de 20 m u centre de la placette
+  x <- c(x,NCI93) # Stock du NCI calculé
+}
+
+NCI93 <- cbind(juv,x) |> # On récupère le vecteur comprenant tous les NCI dans notre jeu de donné et on convertit en m² (valeur en cm² initialement et ça fais des gros chiffres)
+  rename(NCI93 = x) |>
+  mutate(NCI93 = NCI93/10000) |>
+  select(ID,NCI93)
+
+
+
+# 1995
+data_NCI95 <- guy |> 
+  filter(CensusYear == 1995, CodeAlive==TRUE) |> #Filtre sur l'année pour laquelle vous voulez calculer le NCI 
+  select(idTree,Xutm,Yutm,CensusYear, DBH) #Sélection des variables d'intérêt
+
+
+x = c() #Initialisation du vecteur nul qui stockera les NCI calculés
+for (ind in 1:nrow(juv)){
+  NC <- data_NCI95 |>
+    mutate(dist_ij = sqrt((juv$X_UTM_Placette[ind]-Xutm)^2 + (juv$Y_UTM_Placette[ind] - Yutm)^2)) #Création d'un champ de distance au centre de la placette dans le tableau NC
+  NCI95 = sum((NC$DBH[which(NC$dist_ij < 20)])^2 * exp(-0.25*NC$dist_ij[which(NC$dist_ij < 20)]))  #Calcul du NCI en prenant uniquement les arbres à moins de 20 m u centre de la placette
+  x <- c(x,NCI95) # Stock du NCI calculé
+}
+
+NCI95 <- cbind(juv,x) |> # On récupère le vecteur comprenant tous les NCI dans notre jeu de donné et on convertit en m² (valeur en cm² initialement et ça fais des gros chiffres)
+  rename(NCI95 = x) |>
+  mutate(NCI95 = NCI95/10000) |>
+  select(ID,NCI95)
+
+
+#2002 indénile : on prend 2001 guyafor
+data_NCI02 <- guy |> 
+  filter(CensusYear == 2001, CodeAlive==TRUE) |> #Filtre sur l'année pour laquelle vous voulez calculer le NCI 
+  select(idTree,Xutm,Yutm,CensusYear, DBH) #Sélection des variables d'intérêt
+
+
+x = c() #Initialisation du vecteur nul qui stockera les NCI calculés
+for (ind in 1:nrow(juv)){
+  NC <- data_NCI02 |>
+    mutate(dist_ij = sqrt((juv$X_UTM_Placette[ind]-Xutm)^2 + (juv$Y_UTM_Placette[ind] - Yutm)^2)) #Création d'un champ de distance au centre de la placette dans le tableau NC
+  NCI02 = sum((NC$DBH[which(NC$dist_ij < 20)])^2 * exp(-0.25*NC$dist_ij[which(NC$dist_ij < 20)]))  #Calcul du NCI en prenant uniquement les arbres à moins de 20 m u centre de la placette
+  x <- c(x,NCI02) # Stock du NCI calculé
+}
+
+NCI02 <- cbind(juv,x) |> # On récupère le vecteur comprenant tous les NCI dans notre jeu de donné et on convertit en m² (valeur en cm² initialement et ça fais des gros chiffres)
+  rename(NCI02 = x) |>
+  mutate(NCI02 = NCI02/10000) |>
+  select(ID,NCI02)
+
+
+
+#2005
+data_NCI05 <- guy |> 
+  filter(CensusYear == 2005, CodeAlive==TRUE) |> #Filtre sur l'année pour laquelle vous voulez calculer le NCI 
+  select(idTree,Xutm,Yutm,CensusYear, DBH) #Sélection des variables d'intérêt
+
+
+x = c() #Initialisation du vecteur nul qui stockera les NCI calculés
+for (ind in 1:nrow(juv)){
+  NC <- data_NCI05 |>
+    mutate(dist_ij = sqrt((juv$X_UTM_Placette[ind]-Xutm)^2 + (juv$Y_UTM_Placette[ind] - Yutm)^2)) #Création d'un champ de distance au centre de la placette dans le tableau NC
+  NCI05 = sum((NC$DBH[which(NC$dist_ij < 20)])^2 * exp(-0.25*NC$dist_ij[which(NC$dist_ij < 20)]))  #Calcul du NCI en prenant uniquement les arbres à moins de 20 m u centre de la placette
+  x <- c(x,NCI05) # Stock du NCI calculé
+}
+
+NCI05 <- cbind(juv,x) |> # On récupère le vecteur comprenant tous les NCI dans notre jeu de donné et on convertit en m² (valeur en cm² initialement et ça fais des gros chiffres)
+  rename(NCI05 = x) |>
+  mutate(NCI05 = NCI05/10000) |>
+  select(ID,NCI05)
+
+
+
+#2008 indéniles : on prend 2007 guyafor
+data_NCI08 <- guy |> 
+  filter(CensusYear == 2007, CodeAlive==TRUE) |> #Filtre sur l'année pour laquelle vous voulez calculer le NCI 
+  select(idTree,Xutm,Yutm,CensusYear, DBH) #Sélection des variables d'intérêt
+
+
+x = c() #Initialisation du vecteur nul qui stockera les NCI calculés
+for (ind in 1:nrow(juv)){
+  NC <- data_NCI08 |>
+    mutate(dist_ij = sqrt((juv$X_UTM_Placette[ind]-Xutm)^2 + (juv$Y_UTM_Placette[ind] - Yutm)^2)) #Création d'un champ de distance au centre de la placette dans le tableau NC
+  NCI08 = sum((NC$DBH[which(NC$dist_ij < 20)])^2 * exp(-0.25*NC$dist_ij[which(NC$dist_ij < 20)]))  #Calcul du NCI en prenant uniquement les arbres à moins de 20 m u centre de la placette
+  x <- c(x,NCI08) # Stock du NCI calculé
+}
+
+NCI08 <- cbind(juv,x) |> # On récupère le vecteur comprenant tous les NCI dans notre jeu de donné et on convertit en m² (valeur en cm² initialement et ça fais des gros chiffres)
+  rename(NCI08 = x) |>
+  mutate(NCI08 = NCI08/10000) |>
+  select(ID,NCI08)
+
+
+
+#2013
+data_NCI13 <- guy |> 
+  filter(CensusYear == 2013, CodeAlive==TRUE) |> #Filtre sur l'année pour laquelle vous voulez calculer le NCI 
+  select(idTree,Xutm,Yutm,CensusYear, DBH) #Sélection des variables d'intérêt
+
+
+x = c() #Initialisation du vecteur nul qui stockera les NCI calculés
+for (ind in 1:nrow(juv)){
+  NC <- data_NCI13 |>
+    mutate(dist_ij = sqrt((juv$X_UTM_Placette[ind]-Xutm)^2 + (juv$Y_UTM_Placette[ind] - Yutm)^2)) #Création d'un champ de distance au centre de la placette dans le tableau NC
+  NCI13 = sum((NC$DBH[which(NC$dist_ij < 20)])^2 * exp(-0.25*NC$dist_ij[which(NC$dist_ij < 20)]))  #Calcul du NCI en prenant uniquement les arbres à moins de 20 m u centre de la placette
+  x <- c(x,NCI13) # Stock du NCI calculé
+}
+
+NCI13 <- cbind(juv,x) |> # On récupère le vecteur comprenant tous les NCI dans notre jeu de donné et on convertit en m² (valeur en cm² initialement et ça fais des gros chiffres)
+  rename(NCI13 = x) |>
+  mutate(NCI13 = NCI13/10000) |>
+  select(ID,NCI13)
+
+
+#2016 indéniles : on prend 2015 guayfor
+data_NCI16 <- guy |> 
+  filter(CensusYear == 2015, CodeAlive==TRUE) |> #Filtre sur l'année pour laquelle vous voulez calculer le NCI 
+  select(idTree,Xutm,Yutm,CensusYear, DBH) #Sélection des variables d'intérêt
+
+
+x = c() #Initialisation du vecteur nul qui stockera les NCI calculés
+for (ind in 1:nrow(juv)){
+  NC <- data_NCI16 |>
+    mutate(dist_ij = sqrt((juv$X_UTM_Placette[ind]-Xutm)^2 + (juv$Y_UTM_Placette[ind] - Yutm)^2)) #Création d'un champ de distance au centre de la placette dans le tableau NC
+  NCI16 = sum((NC$DBH[which(NC$dist_ij < 20)])^2 * exp(-0.25*NC$dist_ij[which(NC$dist_ij < 20)]))  #Calcul du NCI en prenant uniquement les arbres à moins de 20 m u centre de la placette
+  x <- c(x,NCI16) # Stock du NCI calculé
+}
+
+NCI16 <- cbind(juv,x) |> # On récupère le vecteur comprenant tous les NCI dans notre jeu de donné et on convertit en m² (valeur en cm² initialement et ça fais des gros chiffres)
+  rename(NCI16 = x) |>
+  mutate(NCI16 = NCI16/10000) |>
+  select(ID,NCI16)
+
+juv_NCI <- left_join(juv, NCI92, by="ID")
+juv_NCI <- left_join(juv_NCI, NCI93, by="ID")
+juv_NCI <- left_join(juv_NCI, NCI95, by="ID")
+juv_NCI <- left_join(juv_NCI, NCI02, by="ID")
+juv_NCI <- left_join(juv_NCI, NCI05, by="ID")
+juv_NCI <- left_join(juv_NCI, NCI08, by="ID")
+juv_NCI <- left_join(juv_NCI, NCI13, by="ID")
+juv_NCI <- left_join(juv_NCI, NCI16, by="ID")
+
+```
+
+## Spatial analysis
+
+```{r}
+
+#SWI
+
+SWI <- rast("Projet EFT 2026/Données/Spatial/SWI_2019_filled_sinks.tif")
+crs(SWI) <- "epsg:2972"
+juv_ind_sf <- juv |> 
+  select("Placette","PAR","ID","X_UTM_Arbre_VRAI","Y_UTM_Arbre_VRAI") |> 
+  st_as_sf(coords=c("X_UTM_Arbre_VRAI","Y_UTM_Arbre_VRAI")) |> 
+  relocate(ID)
+st_crs(juv_ind_sf) = 2972
+juv_ind_SWI <- terra::extract(SWI,juv_ind_sf,ID=FALSE,bind=TRUE) |> 
+  as.data.frame() |> 
+  rename(SWI=4)
+
+#Explore varaibility of TWI inside a same plot
+#ggplot(juv_ind_SWI[1:1000,],aes(x=Placette,y=SWI)) + geom_boxplot()
+
+
+#LIDAR
+
+juv_placette <- juv |>
+  select("Placette","X_UTM_Placette","Y_UTM_Placette") |> 
+  distinct(Placette,.keep_all=TRUE) |> 
+  st_as_sf(coords = c("X_UTM_Placette","Y_UTM_Placette")) 
+st_crs(juv_placette)= 2972
+juv_buffer <- juv_placette |> 
+  st_buffer(dist=20)
+
+lidar2004 <- rast("Projet EFT 2026/Données/Spatial/CHM2004_3.93_filled_1mres.tif")
+values(lidar2004) <- ifelse(values(lidar2004)<10, 1, 0)
+lidar2004 <- ifel(lidar2004==1, 1, NA) 
+patch <- patches(lidar2004, directions=8)
+lidar2004_poly <- as.polygons(patch)
+area <- expanse(lidar2004_poly)
+lidar2004_filtered <- lidar2004_poly[area >10, ]
+
+juv_intersect_2004 <- st_intersection(juv_buffer,st_as_sf(lidar2004_filtered))
+
+juv_lum_2004 <- juv_intersect_2004 |> 
+  mutate(area=st_area(juv_intersect_2004)) |> 
+  as.data.frame() |> 
+  summarise(area=sum(area),.by=Placette) |>
+  drop_units() |> 
+  mutate(ilum_2004=area/(pi*20^2))
+
+lidar2009 <- rast("Projet EFT 2026/Données/Spatial/CHM2009_3.93_filled_1mres.tif")
+values(lidar2009) <- ifelse(values(lidar2009)<10, 1, 0)
+lidar2009 <- ifel(lidar2009==1, 1, NA) 
+patch <- patches(lidar2009, directions=8)
+lidar2009_poly <- as.polygons(patch)
+area <- expanse(lidar2009_poly)
+lidar2009_filtered <- lidar2009_poly[area >10, ]
+
+juv_intersect_2009 <- st_intersection(juv_buffer,st_as_sf(lidar2009_filtered))
+
+juv_lum_2009 <- juv_intersect_2009 |> 
+  mutate(area=st_area(juv_intersect_2009)) |> 
+  as.data.frame() |> 
+  summarise(area=sum(area),.by=Placette) |>
+  drop_units() |> 
+  mutate(ilum_2009=area/(pi*20^2))
+
+lidar2013 <- rast("Projet EFT 2026/Données/Spatial/CHM2013_3.93_filled_1mres.tif")
+values(lidar2013) <- ifelse(values(lidar2013)<10, 1, 0)
+lidar2013 <- ifel(lidar2013==1, 1, NA) 
+patch <- patches(lidar2013, directions=8)
+lidar2013_poly <- as.polygons(patch)
+area <- expanse(lidar2013_poly)
+lidar2013_filtered <- lidar2013_poly[area >10, ]
+
+juv_intersect_2013 <- st_intersection(juv_buffer,st_as_sf(lidar2013_filtered))
+
+juv_lum_2013 <- juv_intersect_2013 |> 
+  mutate(area=st_area(juv_intersect_2013)) |> 
+  as.data.frame() |> 
+  summarise(area=sum(area),.by=Placette) |>
+  drop_units() |> 
+  mutate(ilum_2013=area/(pi*20^2))
+
+lidar2015 <- rast("Projet EFT 2026/Données/Spatial/CHM2015_3.93_filled_1mres.tif")
+values(lidar2015) <- ifelse(values(lidar2015)<10, 1, 0)
+lidar2015 <- ifel(lidar2015==1, 1, NA) 
+patch <- patches(lidar2015, directions=8)
+lidar2015_poly <- as.polygons(patch)
+area <- expanse(lidar2015_poly)
+lidar2015_filtered <- lidar2015_poly[area >10, ]
+
+juv_intersect_2015 <- st_intersection(juv_buffer,st_as_sf(lidar2015_filtered))
+
+juv_lum_2015 <- juv_intersect_2015 |> 
+  mutate(area=st_area(juv_intersect_2015)) |> 
+  as.data.frame() |> 
+  summarise(area=sum(area),.by=Placette) |>
+  drop_units() |> 
+  mutate(ilum_2015=area/(pi*20^2))
+
+lidar2016 <- rast("Projet EFT 2026/Données/Spatial/CHM2016_3.93_filled_1mres.tif")
+values(lidar2016) <- ifelse(values(lidar2016)<10, 1, 0)
+lidar2016 <- ifel(lidar2016==1, 1, NA) 
+patch <- patches(lidar2016, directions=8)
+lidar2016_poly <- as.polygons(patch)
+area <- expanse(lidar2016_poly)
+lidar2016_filtered <- lidar2016_poly[area >10, ]
+
+juv_intersect_2016 <- st_intersection(juv_buffer,st_as_sf(lidar2016_filtered))
+
+juv_lum_2016 <- juv_intersect_2016 |> 
+  mutate(area=st_area(juv_intersect_2016)) |> 
+  as.data.frame() |> 
+  summarise(area=sum(area),.by=Placette) |>
+  drop_units() |> 
+  mutate(ilum_2016=area/(pi*20^2))
+
+juv_lidar <- left_join(juv,juv_lum_2004[,c(1,3)],join_by(Placette))
+juv_lidar <- left_join(juv_lidar,juv_lum_2009[,c(1,3)],join_by(Placette))
+juv_lidar <- left_join(juv_lidar,juv_lum_2013[,c(1,3)],join_by(Placette))
+juv_lidar <- left_join(juv_lidar,juv_lum_2015[,c(1,3)],join_by(Placette))
+juv_lidar <- left_join(juv_lidar,juv_lum_2016[,c(1,3)],join_by(Placette))
+
+juv_lidar <- juv_lidar |> 
+  mutate(ilum_2004=ifelse(is.na(ilum_2004),0,ilum_2004)) |> 
+  mutate(ilum_2009=ifelse(is.na(ilum_2009),0,ilum_2009)) |>
+  mutate(ilum_2013=ifelse(is.na(ilum_2013),0,ilum_2013)) |> 
+  mutate(ilum_2015=ifelse(is.na(ilum_2015),0,ilum_2004)) |> 
+  mutate(ilum_2016=ifelse(is.na(ilum_2016),0,ilum_2016))
+# juv_ind <- juv |>
+#   select("ID","X_UTM_Arbre_VRAI","Y_UTM_Arbre_VRAI") |> 
+#   distinct(ID,.keep_all=TRUE) |> 
+#   st_as_sf(coords = c("X_UTM_Arbre_VRAI","Y_UTM_Arbre_VRAI")) 
+# st_crs(juv_ind)= 2972
+# juv_buffer_ind <- juv_ind |> 
+#   st_buffer(dist=20)
+# 
+# juv_intersect_ind <- st_intersection(juv_buffer_ind,st_as_sf(lidar2004_filtered))
+# 
+# 
+# juv_lum_ind <- juv_intersect_ind |> 
+#   mutate(area=st_area(juv_intersect_ind)) |> 
+#   as.data.frame() |> 
+#   summarise(area=sum(area),.by=ID) |>
+#   drop_units() |> 
+#   mutate(ilum=area/(pi*20^2))
+# juv_lum_ind_join <- left_join(juv_lum_ind,juv[,1:2],join_by(ID))
+# 
+# ggplot(juv_lum_ind_join,aes(x=Placette,y=ilum)) + geom_boxplot() + geom_point(data=juv_lum_2004, aes(x=Placette,y=),color="red")
+
+
+
+```
+
+## jSDM
+
+```{r}
+#install.packages("Hmsc")
+library(Hmsc)
+```
+
