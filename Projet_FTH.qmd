@@ -9,7 +9,7 @@ editor: visual
 Quarto enables you to weave together content and executable code into a finished document.
 To learn more about Quarto see <https://quarto.org>.
 
-## Library
+## Libraries
 
 ```{r}
 library(tidyverse)
@@ -30,7 +30,7 @@ juv <- read.csv("donnees/BD/arbres_INRA_nv_coord_verif.csv", header = TRUE,fileE
 juv <- juv |> 
   select("Placette","ID","PAR","X_UTM_Arbre_VRAI","Y_UTM_Arbre_VRAI","X_UTM_Placette","Y_UTM_Placette","AZIM",13:43) |> 
   mutate(sp=paste(Genus,Species,sep = " ")) |> # Creating one column for species name
-  filter(!is.na(X_UTM_Arbre_VRAI),!is.na(Y_UTM_Arbre_VRAI)) #Enleve les arbres   dont la localisation n'est pas inscrite
+  filter(!is.na(X_UTM_Arbre_VRAI),!is.na(Y_UTM_Arbre_VRAI)) #On enlève les arbres dont la localisation n'est pas inscrite
   
 
 juv[4400,23]="" #suppressing NA in comment
@@ -94,7 +94,7 @@ juvP <- juv |> # Calcul présence absence de chaque individu à chaque année
   mutate(P16 = ifelse(C16=="M"&substring(CG,7,9)!="RES"|C16!="REC"&P13==0,0,1)) 
 ```
 
-### Abondance
+### Abundance
 
 ```{r}
 juvAb <- juvP |> #Calcul de l'abondance par placette et par espèce -> peut être faire une abondance relative ?
@@ -279,15 +279,12 @@ juv_NCI <- left_join(juv_NCI, NCI13, by="ID")
 juv_NCI <- left_join(juv_NCI, NCI16, by="ID")
 ```
 
-## Spatial analysis
+# Spatial analysis
 
-Pitié scinder ce gros chunk en plusieurs petits avec des commentaires **hors du chunk**
+## SWI
 
 ```{r}
-
-#SWI
-
-SWI <- rast("Projet EFT 2026/Données/Spatial/SWI_2019_filled_sinks.tif")
+SWI <- rast("Projet EFT 2026/donnees/Spatial/SWI_2019_filled_sinks.tif")
 crs(SWI) <- "epsg:2972"
 juv_ind_sf <- juv |> 
   select("Placette","PAR","ID","X_UTM_Arbre_VRAI","Y_UTM_Arbre_VRAI") |> 
@@ -300,10 +297,13 @@ juv_ind_SWI <- terra::extract(SWI,juv_ind_sf,ID=FALSE,bind=TRUE) |>
 
 #Explore varaibility of TWI inside a same plot
 #ggplot(juv_ind_SWI[1:1000,],aes(x=Placette,y=SWI)) + geom_boxplot()
+```
 
+## LiDAR
 
-#LIDAR
+### Plots and buffers
 
+```{r}
 juv_placette <- juv |>
   select("Placette","X_UTM_Placette","Y_UTM_Placette") |> 
   distinct(Placette,.keep_all=TRUE) |> 
@@ -311,8 +311,11 @@ juv_placette <- juv |>
 st_crs(juv_placette)= 2972
 juv_buffer <- juv_placette |> 
   st_buffer(dist=20)
+```
 
+### LiDAR treatment 
 
+```{r}
 lidar2004 <- rast("donnees/Spatial/CHM2004_3.93_filled_1mres.tif")
 values(lidar2004) <- ifelse(values(lidar2004)<10, 1, 0)
 lidar2004 <- ifel(lidar2004==1, 1, NA) 
@@ -330,7 +333,7 @@ juv_lum_2004 <- juv_intersect_2004 |>
   drop_units() |> 
   mutate(ilum_2004=area/(pi*20^2))
 
-lidar2009 <- rast("Projet EFT 2026/Données/Spatial/CHM2009_3.93_filled_1mres.tif")
+lidar2009 <- rast("Projet EFT 2026/donnees/Spatial/CHM2009_3.93_filled_1mres.tif")
 values(lidar2009) <- ifelse(values(lidar2009)<10, 1, 0)
 lidar2009 <- ifel(lidar2009==1, 1, NA) 
 patch <- patches(lidar2009, directions=8)
@@ -347,7 +350,7 @@ juv_lum_2009 <- juv_intersect_2009 |>
   drop_units() |> 
   mutate(ilum_2009=area/(pi*20^2))
 
-lidar2013 <- rast("Projet EFT 2026/Données/Spatial/CHM2013_3.93_filled_1mres.tif")
+lidar2013 <- rast("Projet EFT 2026/donnees/Spatial/CHM2013_3.93_filled_1mres.tif")
 values(lidar2013) <- ifelse(values(lidar2013)<10, 1, 0)
 lidar2013 <- ifel(lidar2013==1, 1, NA) 
 patch <- patches(lidar2013, directions=8)
@@ -364,7 +367,7 @@ juv_lum_2013 <- juv_intersect_2013 |>
   drop_units() |> 
   mutate(ilum_2013=area/(pi*20^2))
 
-lidar2015 <- rast("Projet EFT 2026/Données/Spatial/CHM2015_3.93_filled_1mres.tif")
+lidar2015 <- rast("Projet EFT 2026/donnees/Spatial/CHM2015_3.93_filled_1mres.tif")
 values(lidar2015) <- ifelse(values(lidar2015)<10, 1, 0)
 lidar2015 <- ifel(lidar2015==1, 1, NA) 
 patch <- patches(lidar2015, directions=8)
@@ -381,7 +384,7 @@ juv_lum_2015 <- juv_intersect_2015 |>
   drop_units() |> 
   mutate(ilum_2015=area/(pi*20^2))
 
-lidar2016 <- rast("Projet EFT 2026/Données/Spatial/CHM2016_3.93_filled_1mres.tif")
+lidar2016 <- rast("Projet EFT 2026/donnees/Spatial/CHM2016_3.93_filled_1mres.tif")
 values(lidar2016) <- ifelse(values(lidar2016)<10, 1, 0)
 lidar2016 <- ifel(lidar2016==1, 1, NA) 
 patch <- patches(lidar2016, directions=8)
@@ -397,13 +400,21 @@ juv_lum_2016 <- juv_intersect_2016 |>
   summarise(area=sum(area),.by=Placette) |>
   drop_units() |> 
   mutate(ilum_2016=area/(pi*20^2))
+```
 
+### LiDAR data merging
+
+```{r}
 juv_lidar <- left_join(juv,juv_lum_2004[,c(1,3)],join_by(Placette))
 juv_lidar <- left_join(juv_lidar,juv_lum_2009[,c(1,3)],join_by(Placette))
 juv_lidar <- left_join(juv_lidar,juv_lum_2013[,c(1,3)],join_by(Placette))
 juv_lidar <- left_join(juv_lidar,juv_lum_2015[,c(1,3)],join_by(Placette))
 juv_lidar <- left_join(juv_lidar,juv_lum_2016[,c(1,3)],join_by(Placette))
+```
 
+### Imputation of missing values 
+
+```{r}
 juv_lidar <- juv_lidar |> 
   mutate(ilum_2004=ifelse(is.na(ilum_2004),0,ilum_2004)) |> 
   mutate(ilum_2009=ifelse(is.na(ilum_2009),0,ilum_2009)) |>
@@ -430,9 +441,6 @@ juv_lidar <- juv_lidar |>
 # juv_lum_ind_join <- left_join(juv_lum_ind,juv[,1:2],join_by(ID))
 # 
 # ggplot(juv_lum_ind_join,aes(x=Placette,y=ilum)) + geom_boxplot() + geom_point(data=juv_lum_2004, aes(x=Placette,y=),color="red")
-
-
-
 ```
 
 ## jSDM
