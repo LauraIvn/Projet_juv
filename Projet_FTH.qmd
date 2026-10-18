@@ -6,8 +6,7 @@ editor: visual
 
 ## Quarto
 
-Quarto enables you to weave together content and executable code into a finished document.
-To learn more about Quarto see <https://quarto.org>.
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
 
 ## Libraries
 
@@ -17,6 +16,7 @@ library(terra)
 library(sf)
 library(ggplot2)
 library(units)
+library(Hmsc)
 ```
 
 ## Tidying
@@ -30,8 +30,8 @@ juv <- read.csv("donnees/BD/arbres_INRA_nv_coord_verif.csv", header = TRUE,fileE
 juv <- juv |> 
   select("Placette","ID","PAR","X_UTM_Arbre_VRAI","Y_UTM_Arbre_VRAI","X_UTM_Placette","Y_UTM_Placette","AZIM",13:43) |> 
   mutate(sp=paste(Genus,Species,sep = " ")) |> # Creating one column for species name
-  filter(!is.na(X_UTM_Arbre_VRAI),!is.na(Y_UTM_Arbre_VRAI)) #On enlève les arbres dont la localisation n'est pas inscrite
-  
+  filter(!is.na(X_UTM_Arbre_VRAI),!is.na(Y_UTM_Arbre_VRAI)) |> #On enlève les arbres dont la localisation n'est pas inscrite
+  mutate(sp=ifelse(sp=="Symphonia sp. 1", "Symphonia sp.1",sp)) 
 
 juv[4400,23]="" #suppressing NA in comment
 juv[4400,27]=""
@@ -46,7 +46,8 @@ guy <- guy |>
   select("Plot","TreeFieldNum","idTree","Xutm","Yutm","Family","Genus","Species","BotaCertainty","CensusYear","CensusDate","CodeAlive","MeasCode","Circ","CircCorr") |> 
   mutate(sp=paste(Genus,Species,sep = " ")) |> 
   mutate(CircCorr=ifelse(is.na(CircCorr),Circ,CircCorr)) |> 
-  mutate(DBH=CircCorr/pi)
+  mutate(DBH=CircCorr/pi) |> 
+  mutate(sp=ifelse(sp=="Schefflera Indet.", "Schefflera decaphylla",sp)) #On associe les indet à decaphylla pour le moment
 
 
 # DOUBLONS ID : suppression
@@ -284,7 +285,7 @@ juv_NCI <- left_join(juv_NCI, NCI16, by="ID")
 ## SWI
 
 ```{r}
-SWI <- rast("Projet EFT 2026/donnees/Spatial/SWI_2019_filled_sinks.tif")
+SWI <- rast("donnees/Spatial/SWI_2019_filled_sinks.tif")
 crs(SWI) <- "epsg:2972"
 juv_ind_sf <- juv |> 
   select("Placette","PAR","ID","X_UTM_Arbre_VRAI","Y_UTM_Arbre_VRAI") |> 
@@ -313,7 +314,7 @@ juv_buffer <- juv_placette |>
   st_buffer(dist=20)
 ```
 
-### LiDAR treatment 
+### LiDAR treatment
 
 ```{r}
 lidar2004 <- rast("donnees/Spatial/CHM2004_3.93_filled_1mres.tif")
@@ -333,7 +334,7 @@ juv_lum_2004 <- juv_intersect_2004 |>
   drop_units() |> 
   mutate(ilum_2004=area/(pi*20^2))
 
-lidar2009 <- rast("Projet EFT 2026/donnees/Spatial/CHM2009_3.93_filled_1mres.tif")
+lidar2009 <- rast("donnees/Spatial/CHM2009_3.93_filled_1mres.tif")
 values(lidar2009) <- ifelse(values(lidar2009)<10, 1, 0)
 lidar2009 <- ifel(lidar2009==1, 1, NA) 
 patch <- patches(lidar2009, directions=8)
@@ -350,7 +351,7 @@ juv_lum_2009 <- juv_intersect_2009 |>
   drop_units() |> 
   mutate(ilum_2009=area/(pi*20^2))
 
-lidar2013 <- rast("Projet EFT 2026/donnees/Spatial/CHM2013_3.93_filled_1mres.tif")
+lidar2013 <- rast("donnees/Spatial/CHM2013_3.93_filled_1mres.tif")
 values(lidar2013) <- ifelse(values(lidar2013)<10, 1, 0)
 lidar2013 <- ifel(lidar2013==1, 1, NA) 
 patch <- patches(lidar2013, directions=8)
@@ -367,7 +368,7 @@ juv_lum_2013 <- juv_intersect_2013 |>
   drop_units() |> 
   mutate(ilum_2013=area/(pi*20^2))
 
-lidar2015 <- rast("Projet EFT 2026/donnees/Spatial/CHM2015_3.93_filled_1mres.tif")
+lidar2015 <- rast("donnees/Spatial/CHM2015_3.93_filled_1mres.tif")
 values(lidar2015) <- ifelse(values(lidar2015)<10, 1, 0)
 lidar2015 <- ifel(lidar2015==1, 1, NA) 
 patch <- patches(lidar2015, directions=8)
@@ -384,7 +385,7 @@ juv_lum_2015 <- juv_intersect_2015 |>
   drop_units() |> 
   mutate(ilum_2015=area/(pi*20^2))
 
-lidar2016 <- rast("Projet EFT 2026/donnees/Spatial/CHM2016_3.93_filled_1mres.tif")
+lidar2016 <- rast("donnees/Spatial/CHM2016_3.93_filled_1mres.tif")
 values(lidar2016) <- ifelse(values(lidar2016)<10, 1, 0)
 lidar2016 <- ifel(lidar2016==1, 1, NA) 
 patch <- patches(lidar2016, directions=8)
@@ -412,7 +413,7 @@ juv_lidar <- left_join(juv_lidar,juv_lum_2015[,c(1,3)],join_by(Placette))
 juv_lidar <- left_join(juv_lidar,juv_lum_2016[,c(1,3)],join_by(Placette))
 ```
 
-### Imputation of missing values 
+### Imputation of missing values
 
 ```{r}
 juv_lidar <- juv_lidar |> 
@@ -441,6 +442,54 @@ juv_lidar <- juv_lidar |>
 # juv_lum_ind_join <- left_join(juv_lum_ind,juv[,1:2],join_by(ID))
 # 
 # ggplot(juv_lum_ind_join,aes(x=Placette,y=ilum)) + geom_boxplot() + geom_point(data=juv_lum_2004, aes(x=Placette,y=),color="red")
+
+```
+
+## Selecting only adult trees
+
+```{r}
+dbh_ad_pierrot_df <- read.csv("donnees/BD/DBH_thrs_updated(1).csv",header=TRUE,sep=",") |> #Uniformisation du nom des variables
+  rename(sp=NewScientificName) |> 
+  mutate(sp=gsub("_"," ",sp)) |> # mettre le nom en format genus species
+  rename(dbh_ad_pierrot=Estimated_DBH_thrs) |> 
+  select(sp,dbh_ad_pierrot)
+dbh_ad_df <- read.csv("donnees/BD/final_reproductive_DBH.csv",header=TRUE,sep=",") |>
+  mutate(ScientificName=gsub("_"," ",ScientificName)) |> # mettre le nom en format genus species
+  rename(sp=ScientificName,dbh_ad = DBH_reproductive_median) |> 
+  select(sp, dbh_ad ) |> 
+  mutate(sp= word(sp, 1,2,sep=fixed(" "))) |> # select the two first words to delete subsp ...
+  summarise(dbh_ad=mean(dbh_ad),.by=sp) # Utilisation de la moyenne des valeurs de DBH_ad par sous_espèce pour les espèces présentant des sous-espèces
+
+guy_ad <- left_join(guy,dbh_ad_df,join_by(sp))
+guy_ad_pierrot <- left_join(guy_ad,dbh_ad_pierrot_df,join_by(sp))#Ajoute les 2 variables de diametre de maturité
+
+guy_ad_2015 <- left_join(guy_ad_pierrot,guy_max,join_by(sp)) |> 
+  filter(sp %in%  levels(as.factor(juv$sp))) |> #List of all species 
+  filter(CensusYear==2015)|> #Année de l'inventaire complet, 2016 que les parcelles témoins
+  mutate(dbh_ad=ifelse(sp=="Symphonia sp.1",dbh_ad_df$dbh_ad[which(dbh_ad_df$sp=="Symphonia globulifera")],dbh_ad)) |>  #Mettre le diamètre de maturité de sp1 = à celui de globulifera 
+  mutate(dbh_ad=ifelse(is.na(dbh_ad) ,dbh_ad_pierrot,dbh_ad)) |> #SI NA on prend la valeur de pierrot
+  mutate(dbh_ad=ifelse(is.na(dbh_ad),DBH_max/2,dbh_ad)) |> #Si c'est encore NA (pas présent dans la base de pierrot) on prend le dbh_max/2 -> j'ai l'impression que la seule espèce dans ce cas est eperua grandiflora
+  filter(DBH>=dbh_ad) |>  #selection des arbres adultes de nos espèces
+  select(idTree,Xutm,Yutm,sp)
+
+```
+
+## Distance of nearest con-specific adult
+
+```{r}
+guy_ad_2015_sf <- st_as_sf(guy_ad_2015,coords = c("Xutm","Yutm"))
+st_crs(guy_ad_2015_sf) <- 2972 #met le meme systeme de coordonnees
+juv_ind_dist <- left_join(juv_ind_sf,juv[,c("ID","sp")],join_by(ID)) # met l'sp sur juv_ind_sf
+dist <-c() #cree un vecteur vide
+for (i in 1:nrow(juv_ind_sf)){
+  dist[i]=min(st_distance(juv_ind_dist[i,5],guy_ad_2015_sf[which(guy_ad_2015_sf$sp==juv_ind_dist$sp[i]),3])) # boucle qui calcule la distance entre un juv de rang i et tous les adultes de la même espèce
+}# met à peu près 5 10 min à tourner
+
+juv_ind_dist <- juv_ind_dist |> 
+  mutate(dist=dist) #Infinite distance for Schefflera
+
+
+
 ```
 
 ## jSDM
@@ -449,9 +498,9 @@ Creation of abondance dataset and objects required for the hmsc function :
 
 ```{r}
 #install.packages("Hmsc")
-library(Hmsc)
 
-juv2016 <- juv[!is.na(juv$D16), ]
+
+juv2016 <- juv[!is.na(juv$D16), ] #Pas sur que ce soit otpimum, il y a des ind qui sont présent en 2016 ais n'ont peut être pas fait l'objet d'une mesure (trop petit ou autre) je propose de plutot utiliser le df presence absence que j'ai fait qui prend en compte la varaible mort
 
 Abondance2016 <- as.data.frame.matrix(table(juv2016$Placette, juv2016$sp))
 ```
