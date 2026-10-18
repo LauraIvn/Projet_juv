@@ -465,7 +465,8 @@ guy_ad_pierrot <- left_join(guy_ad,dbh_ad_pierrot_df,join_by(sp))#Ajoute les 2 v
 
 guy_ad_2015 <- left_join(guy_ad_pierrot,guy_max,join_by(sp)) |> 
   filter(sp %in%  levels(as.factor(juv$sp))) |> #List of all species 
-  filter(CensusYear==2015)|> #Année de l'inventaire complet, 2016 que les parcelles témoins
+  filter(CensusYear==2015) |> 
+  filter(CodeAlive=TRUE)|> #Année de l'inventaire complet, 2016 que les parcelles témoins
   mutate(dbh_ad=ifelse(sp=="Symphonia sp.1",dbh_ad_df$dbh_ad[which(dbh_ad_df$sp=="Symphonia globulifera")],dbh_ad)) |>  #Mettre le diamètre de maturité de sp1 = à celui de globulifera 
   mutate(dbh_ad=ifelse(is.na(dbh_ad) ,dbh_ad_pierrot,dbh_ad)) |> #SI NA on prend la valeur de pierrot
   mutate(dbh_ad=ifelse(is.na(dbh_ad),DBH_max/2,dbh_ad)) |> #Si c'est encore NA (pas présent dans la base de pierrot) on prend le dbh_max/2 -> j'ai l'impression que la seule espèce dans ce cas est eperua grandiflora
@@ -486,8 +487,8 @@ for (i in 1:nrow(juv_ind_sf)){
 }# met à peu près 5 10 min à tourner
 
 juv_ind_dist <- juv_ind_dist |> 
-  mutate(dist=dist) #Infinite distance for Schefflera
-
+  mutate(dist=dist) |>  #Infinite distance for Schefflera
+  mutate(dist=ifelse(dist==Inf,1000,dist)) # Imputing really big distances
 
 
 ```
