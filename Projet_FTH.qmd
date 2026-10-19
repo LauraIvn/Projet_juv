@@ -6,8 +6,7 @@ editor: visual
 
 ## Quarto
 
-Quarto enables you to weave together content and executable code into a finished document.
-To learn more about Quarto see <https://quarto.org>.
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
 
 ## Libraries
 
@@ -57,8 +56,7 @@ juv <- juv[!juv$ID %in% c(
   "4.6.10.4", "5.3.8.52", "5.4.6.6", "5.5.7.51",
   "5.6.3.8", "5.6.6.4", "6.9.9.58", "8.6.10.6","8.6.4.9"), ] 
 
-# Homogénéisation nom sp1 entre les guy et juv
-guy$sp <- ifelse(guy$sp=="Symphonia sp.1", "Symphonia sp. 1", guy$sp) 
+
 
 ```
 
