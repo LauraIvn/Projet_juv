@@ -6,8 +6,7 @@ editor: visual
 
 ## Quarto
 
-Quarto enables you to weave together content and executable code into a finished document.
-To learn more about Quarto see <https://quarto.org>.
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
 
 ## Libraries
 
@@ -538,6 +537,13 @@ juv <- juv %>% mutate(exploitation = case_when(
       PAR %in% c(9, 2, 7)   ~ 1,
       PAR %in% c(10, 3, 5)  ~ 2,
       PAR %in% c(12, 8, 4)  ~ 3))
+
+#Distance matrix
+dist_matrix <- juv_ind_dist |> 
+  st_drop_geometry() |> #drop the geometry value that cause problem in the pivot wider
+  select(Placette,sp,dist) |> 
+  pivot_wider(id_cols=Placette,names_from=sp,values_from=dist,values_fn = mean)#calculate the mean dist per species in the same placette
+#Create NAs when the focal species has none individuals in the plot( make sense) But how to replace those NAs by something making sense, is the model taking into account those NAs?
 
 X <- X %>% left_join(juv[, c("Placette", "exploitation")] %>%
       distinct(), by = "Placette")
