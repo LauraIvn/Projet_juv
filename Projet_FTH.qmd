@@ -6,7 +6,8 @@ editor: visual
 
 ## Quarto
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+Quarto enables you to weave together content and executable code into a finished document.
+To learn more about Quarto see <https://quarto.org>.
 
 ## Libraries
 
@@ -290,11 +291,13 @@ juv_NCI <- left_join(juv_NCI, NCI16, by="ID")
 ```{r}
 SWI <- rast("donnees/Spatial/SWI_2019_filled_sinks.tif")
 crs(SWI) <- "epsg:2972"
+
 juv_ind_sf <- juv |> 
   select("Placette","PAR","ID","X_UTM_Arbre_VRAI","Y_UTM_Arbre_VRAI") |> 
   st_as_sf(coords=c("X_UTM_Arbre_VRAI","Y_UTM_Arbre_VRAI")) |> 
   relocate(ID)
 st_crs(juv_ind_sf) = 2972
+
 juv_ind_SWI <- terra::extract(SWI,juv_ind_sf,ID=FALSE,bind=TRUE) |> 
   as.data.frame() |> 
   rename(SWI=4)
@@ -484,6 +487,7 @@ guy_ad_2015 <- left_join(guy_ad_pierrot,guy_max,join_by(sp)) |>
   mutate(dbh_ad=ifelse(is.na(dbh_ad),DBH_max/2,dbh_ad)) |> #Si c'est encore NA (pas présent dans la base de pierrot) on prend le dbh_max/2 -> j'ai l'impression que la seule espèce dans ce cas est eperua grandiflora
   filter(DBH>=dbh_ad) |>  #selection des arbres adultes de nos espèces
   select(idTree,Xutm,Yutm,sp)
+
 save(guy_ad_2015,file="guy_ad_2015.Rdata")
 ```
 
@@ -493,6 +497,8 @@ save(guy_ad_2015,file="guy_ad_2015.Rdata")
 guy_ad_2015_sf <- st_as_sf(guy_ad_2015,coords = c("Xutm","Yutm"))
 st_crs(guy_ad_2015_sf) <- 2972 #met le meme systeme de coordonnees
 juv_ind_dist <- left_join(juv_ind_sf,juv[,c("ID","sp")],join_by(ID)) # met l'sp sur juv_ind_sf
+#st_crs(juv_ind_dist) <- 2972
+
 dist <-c() #cree un vecteur vide
 for (i in 1:nrow(juv_ind_sf)){
   dist[i]=min(st_distance(juv_ind_dist[i,5],guy_ad_2015_sf[which(guy_ad_2015_sf$sp==juv_ind_dist$sp[i]),3])) # boucle qui calcule la distance entre un juv de rang i et tous les adultes de la même espèce
@@ -521,11 +527,12 @@ juv <- juv[!juv$sp=="NA NA", ]
 Abondance2016 <- as.data.frame.matrix(table(juv2016$Placette, juv2016$sp))
 
 # variables : dist au conspécifique le plus proche? et indice de lumière
-X = juv_lum_2016[,"ilum_2016"]
-XFormula = ~ilum_2016
+X <- juv_lidar %>% group_by(Placette) %>% select(ilum_2016) %>% slice(1)
+#X <- left_join(juv_lidar, dist)
+
+XFormula <- ~ilum_2016
 
 Y = Abondance2016
-
 
 # Variable selection 
 studyDesign <- data.frame(Placette = as.factor(juv$Placette))
@@ -533,7 +540,6 @@ studyDesign <- data.frame(Placette = as.factor(juv$Placette))
 # Variable structuring 
 plot <- HmscRandomLevel(units = studyDesign$Placette)
 ranlevels <- list(plot = plot)
-ranlevels
 
 #
 simul <- Hmsc(Y=Y, XData = X,
