@@ -6,8 +6,7 @@ editor: visual
 
 ## Quarto
 
-Quarto enables you to weave together content and executable code into a finished document.
-To learn more about Quarto see <https://quarto.org>.
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
 
 ## Libraries
 
@@ -485,7 +484,7 @@ guy_ad_2015 <- left_join(guy_ad_pierrot,guy_max,join_by(sp)) |>
   mutate(dbh_ad=ifelse(is.na(dbh_ad),DBH_max/2,dbh_ad)) |> #Si c'est encore NA (pas présent dans la base de pierrot) on prend le dbh_max/2 -> j'ai l'impression que la seule espèce dans ce cas est eperua grandiflora
   filter(DBH>=dbh_ad) |>  #selection des arbres adultes de nos espèces
   select(idTree,Xutm,Yutm,sp)
-
+save(guy_ad_2015,file="guy_ad_2015.Rdata")
 ```
 
 ## Distance of nearest con-specific adult
