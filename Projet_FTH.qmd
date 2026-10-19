@@ -513,35 +513,52 @@ juv_ind_dist <- juv_ind_dist |>
 
 # jSDM
 
-Creation of abondance dataset and objects required for the hmsc function :
+jSDM with the Hmsc package for the 2016 year, with ilum as the main environmental variable
+
+Creation of 2016 abondance dataframe :
 
 ```{r}
-#install.packages("Hmsc")
+Abondance2016 <- as.data.frame.matrix(table(
+  factor(juvP$Placette[juvP$P16 == 1], levels = unique(juvP$Placette)),
+    factor(juvP$sp[juvP$P16 == 1], levels = unique(juvP$sp))))
+# le factor(levels = unique()) permet de forcer le table() à garder toutes les espèces possibles et les parcelles possibles, et pas uniquement les lignes filtrées sur P16==1
+```
 
+Preparation and execution of the model :
 
-juv2016 <- juv[!is.na(juv$D16), ] #Pas sur que ce soit otpimum, il y a des ind qui sont présent en 2016 ais n'ont peut être pas fait l'objet d'une mesure (trop petit ou autre) je propose de plutot utiliser le df presence absence que j'ai fait qui prend en compte la varaible mort
+```{r}
+#library(Hmsc)
 
-# retire le NA NA (1 ind)
-juv <- juv[!juv$sp=="NA NA", ]
-
-Abondance2016 <- as.data.frame.matrix(table(juv2016$Placette, juv2016$sp))
-
-# variables : dist au conspécifique le plus proche? et indice de lumière
+# variables : 
+#ilum
 X <- juv_lidar %>% group_by(Placette) %>% select(ilum_2016) %>% slice(1)
-#X <- left_join(juv_lidar, dist)
 
-XFormula <- ~ilum_2016
+# adding a variable for exploitation level :
+juv <- juv %>% mutate(exploitation = case_when(
+      PAR %in% c(11, 1, 6)  ~ 0,
+      PAR %in% c(9, 2, 7)   ~ 1,
+      PAR %in% c(10, 3, 5)  ~ 2,
+      PAR %in% c(12, 8, 4)  ~ 3))
+
+X <- X %>% left_join(juv[, c("Placette", "exploitation")] %>%
+      distinct(), by = "Placette")
+X$Placette <- as.factor(X$Placette)
+#dist with the closer conspecific adult : not a plot variable so idk
+#X <- left_join(X, juv_ind_dist[,c(2,6)], by="ID")
+
+XFormula <- ~ilum_2016 * as.factor(exploitation)
 
 Y = Abondance2016
 
-# Variable selection 
-studyDesign <- data.frame(Placette = as.factor(juv$Placette))
+# Study design :
+studyDesign <- juv %>% select("Placette","PAR") %>% distinct() %>% mutate(across(everything(), as.factor))
 
 # Variable structuring 
-plot <- HmscRandomLevel(units = studyDesign$Placette)
-ranlevels <- list(plot = plot)
+Placette <- HmscRandomLevel(units = studyDesign$Placette)
+PAR <- HmscRandomLevel(units = studyDesign$PAR)
+ranlevels <- list(Placette=Placette, PAR=PAR)
 
-#
+# Running the model
 simul <- Hmsc(Y=Y, XData = X,
               XFormula = XFormula,
               studyDesign = studyDesign,
