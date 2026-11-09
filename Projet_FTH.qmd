@@ -491,7 +491,7 @@ guy_ad_2015 <- left_join(guy_ad_pierrot,guy_max,join_by(sp)) |>
 save(guy_ad_2015,file="guy_ad_2015.Rdata")
 ```
 
-##  Density of conspecifics adults
+## Density of conspecifics adults
 
 ```{r}
 guy_ad_plot <- split(guy_ad_2015 |> relocate(Xutm,Yutm),guy_ad_2015$Plot) #Create a df per plot
@@ -597,4 +597,63 @@ mod_HMSC = sampleMcmc(simul,
                       transient = 2000,
                       nChains = 4, 
                       nParallel = 4)
+```
+
+# Cox
+
+```{r}
+#install.packages("survival")
+#install.packages("survminer")
+library(survival)
+library(survminer)
+```
+
+Data preparation:
+
+Code à modifier (conditions pour la création de chaque objet) pour correspondre au df juv:
+
+```{r}
+juvsurvie <- juv %>%
+  group_by(ID, sp) %>%
+  summarise(obs_1992 = any(!is.na(D92)), 
+            Mort = ifelse(any(CodeAlive==0), 1,0),
+            Date_Mort = ifelse(any(CodeAlive==0), (min(CensusYear[CodeAlive==0])), NA), 
+            Date_Recrutement = min(CensusYear),
+            # et les recrues recensées mortes -> n'auront pas de previouscensusyear dans le tableau donc pas de time
+            Previous_CensusYear = ifelse(any(CodeAlive==0), max(CensusYear[CodeAlive==1]), NA),
+            .groups = "drop") %>% 
+  filter(!obs_1992) %>% mutate(obs_1992 = NULL) %>%
+  left_join(juvlidar %>% select(ID, ilum_2004), by = "ID") %>%
+  # décimale aléatoire pour l'âge au moment du décès (morta uniforme dans une/deux années)
+  mutate(Census_gap = death_date - Previous_CensusYear) %>%
+  mutate(random = ifelse(!is.na(Census_gap), round(runif(n(), 0, Census_gap), 1), NA)) %>%
+  mutate(death_age = Previous_CensusYear - Date_Recrutement + random) %>% 
+  mutate(Date_Fin=2016) %>% mutate(Durée_obs=Date_Fin - Date_Recrutement) %>%
+  mutate(Time=ifelse(Mort==1, death_age, Durée_obs))
+```
+
+Running the model
+
+```{r}
+cox <- coxph(Surv(Time, Mort) ~ ilum_2004 * sp, data=juvsurvie)
+summary(cox)
+
+#plot
+ggsurvplot(survfit(cox), ggtheme=theme_minimal(), data=juvsurvie)
+```
+
+Model diagnostic
+
+```{r}
+# résidus indépendants du temps
+testph <- cox.zph(cox)
+test_ph
+
+ggcoxzph(testph)
+
+# Testing influential observations
+ggcoxdiagnostics(cox, type = "dfbeta" , linear.predictions = F, ggtheme=theme_bw())
+
+# Testing non linearity for continuous variables
+
 ```
