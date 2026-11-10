@@ -6,8 +6,7 @@ editor: visual
 
 ## Quarto
 
-Quarto enables you to weave together content and executable code into a finished document.
-To learn more about Quarto see <https://quarto.org>.
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
 
 ## Libraries
 
@@ -523,7 +522,24 @@ for (i in 1:12){
   }
 }
 
-
+#Intersecting density with plot buffer
+dist_buffer=20
+juv_density <- juv |> 
+  st_as_sf(coords = c("X_UTM_Placette","Y_UTM_Placette")) |> 
+  select(Placette,PAR) |> 
+  distinct(Placette,.keep_all = TRUE) #|> 
+  
+# mutate(dens_Andira_coriacea = st_intersection(st_buffer(dist = dist_buffer),guy_ad_ppp_matrix[[which(guy_ad_ppp_matrix[[,1]]==PAR),1]]))
+  
+for (j in 1:23){
+  c=c()
+  for (i in 1:nrow(juv_density)){
+    c=c(c,terra::extract(rast(guy_ad_ppp_matrix[[juv_density$PAR[i],j]]),st_buffer(juv_density$geometry[i],dist = dist_buffer),fun="sum"))
+  
+  
+  }
+  juv_density[[paste("dens",levels(as.factor(guy_ad_2015$sp))[j])]] = c
+}
 ```
 
 # jSDM
