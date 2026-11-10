@@ -510,36 +510,35 @@ bw <- attr(density(mean_density_ppp),"sigma") #Isolating the bandwidth
 create_ppp <- function(plot,sp,window){ as.data.frame(guy_ad_plot[plot])[which(as.data.frame(guy_ad_plot[plot])[,4]==sp),]|> 
     as.ppp(W=window) }#Function creating a ppp object per plot named guy_add_ppp_plot. WARNING Window created based on trees but better with plot border
 
-guy_ad_ppp_matrix <- matrix(vector("list",12*23),nrow=12,ncol=23)#Create a matrix of list, each case will be the density of the species j and plot i
+guy_ad_ppp_matrix <- matrix(vector("list",12*24),nrow=12,ncol=24)#Create a matrix of list, each case will be the density of the species j and plot i
 sigma=c()
 
 for (i in 1:12){
   bbox=st_bbox(plot[which(plot$Plot==i),])
   window=c(bbox["xmin"],bbox["xmax"],bbox["ymin"],bbox["ymax"])
-  for (j in 1:23){
+  for (j in 1:24){
    guy_ad_ppp_matrix[[i,j]]=density(create_ppp(i,levels(as.factor(guy_ad_2015$sp))[j],window))
    sigma=c(sigma,attr(guy_ad_ppp_matrix[[i,j]],"sigma"))
   }
 }
 
-#Intersecting density with plot buffer
+#####Intersecting density with plot buffer#####
+#Creating sf placette object
 dist_buffer=20
 juv_density <- juv |> 
   st_as_sf(coords = c("X_UTM_Placette","Y_UTM_Placette")) |> 
   select(Placette,PAR) |> 
-  distinct(Placette,.keep_all = TRUE) #|> 
+  distinct(Placette,.keep_all = TRUE)
   
-# mutate(dens_Andira_coriacea = st_intersection(st_buffer(dist = dist_buffer),guy_ad_ppp_matrix[[which(guy_ad_ppp_matrix[[,1]]==PAR),1]]))
-  
-for (j in 1:23){
-  c=c()
-  for (i in 1:nrow(juv_density)){
-    c=c(c,terra::extract(rast(guy_ad_ppp_matrix[[juv_density$PAR[i],j]]),st_buffer(juv_density$geometry[i],dist = dist_buffer),fun="sum"))
+for (j in 1:24){ #For each species
+  x=c()
+  for (i in 1:nrow(juv_density)){ #For each ind
+    x=c(x,terra::extract(rast(guy_ad_ppp_matrix[[juv_density$PAR[i],j]]),st_buffer(juv_density[i,],dist = dist_buffer),fun="sum")[[2]]) #get the parcelles of the ind, calculate a buffer the placette, intersect the placette buffer with the right density object(species j and parcelle in which placette is)
   
   
   }
-  juv_density[[paste("dens",levels(as.factor(guy_ad_2015$sp))[j])]] = c
-}
+  juv_density[[paste("dens",levels(as.factor(guy_ad_2015$sp))[j])]] = x #create a new column named dens genus species
+} #take around 10 minutes to run
 ```
 
 # jSDM
