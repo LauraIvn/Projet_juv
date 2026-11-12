@@ -6,7 +6,8 @@ editor: visual
 
 ## Quarto
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+Quarto enables you to weave together content and executable code into a finished document.
+To learn more about Quarto see <https://quarto.org>.
 
 ## Libraries
 
@@ -56,8 +57,6 @@ juv <- juv[!juv$ID %in% c(
   "2.6.4.5", "11.8.10.NA", "2.9.6.2", "4.5.8.10",
   "4.6.10.4", "5.3.8.52", "5.4.6.6", "5.5.7.51",
   "5.6.3.8", "5.6.6.4", "6.9.9.58", "8.6.10.6","8.6.4.9"), ] 
-
-
 
 ```
 
@@ -437,6 +436,9 @@ juv_lidar <- juv_lidar |>
   mutate(ilum_2013=ifelse(is.na(ilum_2013),0,ilum_2013)) |> 
   mutate(ilum_2015=ifelse(is.na(ilum_2015),0,ilum_2004)) |> 
   mutate(ilum_2016=ifelse(is.na(ilum_2016),0,ilum_2016))
+
+save(juv_lidar, file="juv_lidar.Rdata")
+
 # juv_ind <- juv |>
 #   select("ID","X_UTM_Arbre_VRAI","Y_UTM_Arbre_VRAI") |> 
 #   distinct(ID,.keep_all=TRUE) |> 
@@ -638,23 +640,45 @@ Data preparation:
 Code à modifier (conditions pour la création de chaque objet) pour correspondre au df juv:
 
 ```{r}
-juvsurvie <- juv %>%
-  group_by(ID, sp) %>%
-  summarise(obs_1992 = any(!is.na(D92)), 
-            Mort = ifelse(any(CodeAlive==0), 1,0),
-            Date_Mort = ifelse(any(CodeAlive==0), (min(CensusYear[CodeAlive==0])), NA), 
-            Date_Recrutement = min(CensusYear),
+juvsurvie <- juvP %>% filter(P92==0) %>%
+  mutate(Mort = ifelse(P93==0|P95==0|P02==0|P05==0|P08==0|P13==0|P16==0, 1, 0),
+           
+             date_mort = case_when(
+              P93 == 1 & P95 == 0 ~ 1995,
+              P95 == 1 & P02 == 0 ~ 2002,
+              P02 == 1 & P05 == 0 ~ 2005,
+              P05 == 1 & P08 == 0 ~ 2008,
+              P08 == 1 & P13 == 0 ~ 2013,
+              P13 == 1 & P16 == 0 ~ 2016), 
+            
+            date_recrutement = case_when(
+              P92 == 0 & P93 == 1 ~ 1993,
+              P93 == 0 & P95 == 1 ~ 1995,
+              P95 == 0 & P02 == 1 ~ 2002,
+              P02 == 0 & P05 == 1 ~ 2005,
+              P05 == 0 & P08 == 1 ~ 2008,
+              P08 == 0 & P13 == 1 ~ 2013,
+              P13 == 0 & P16 == 1 ~ 2016),
             # et les recrues recensées mortes -> n'auront pas de previouscensusyear dans le tableau donc pas de time
-            Previous_CensusYear = ifelse(any(CodeAlive==0), max(CensusYear[CodeAlive==1]), NA),
-            .groups = "drop") %>% 
-  filter(!obs_1992) %>% mutate(obs_1992 = NULL) %>%
-  left_join(juvlidar %>% select(ID, ilum_2004), by = "ID") %>%
+            
+            Previous_CensusYear = case_when(
+              date_mort == 1995 ~ 1992,
+              date_mort == 2002 ~ 1995,
+              date_mort == 2005 ~ 2002,
+              date_mort == 2008 ~ 2005,
+              date_mort == 2013 ~ 2008,
+              date_mort == 2016 ~ 2013)) %>%
+  
+  left_join(juv_lidar %>% select(ID, ilum_2004), by = "ID") %>%
+  
   # décimale aléatoire pour l'âge au moment du décès (morta uniforme dans une/deux années)
-  mutate(Census_gap = death_date - Previous_CensusYear) %>%
+  mutate(Census_gap = date_mort - Previous_CensusYear) %>%
   mutate(random = ifelse(!is.na(Census_gap), round(runif(n(), 0, Census_gap), 1), NA)) %>%
-  mutate(death_age = Previous_CensusYear - Date_Recrutement + random) %>% 
-  mutate(Date_Fin=2016) %>% mutate(Durée_obs=Date_Fin - Date_Recrutement) %>%
-  mutate(Time=ifelse(Mort==1, death_age, Durée_obs))
+  
+  mutate(age_mort = Previous_CensusYear - date_recrutement + random,
+         fin=2016,
+         duree = fin - date_recrutement,
+         Time=ifelse(Mort==1, date_mort, duree))
 ```
 
 Running the model
