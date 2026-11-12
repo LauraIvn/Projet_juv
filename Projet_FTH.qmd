@@ -291,18 +291,19 @@ juv_NCI <- left_join(juv_NCI, NCI16, by="ID")
 SWI <- rast("donnees/Spatial/SWI_2019_filled_sinks.tif")
 crs(SWI) <- "epsg:2972"
 
-juv_ind_sf <- juv |> 
-  select("Placette","PAR","ID","X_UTM_Arbre_VRAI","Y_UTM_Arbre_VRAI") |> 
-  st_as_sf(coords=c("X_UTM_Arbre_VRAI","Y_UTM_Arbre_VRAI")) |> 
-  relocate(ID)
-st_crs(juv_ind_sf) = 2972
+juv_placette_sf <- juv |> 
+  select("Placette","PAR","ID","X_UTM_Placette","Y_UTM_Placette") |> 
+  st_as_sf(coords=c("X_UTM_Placette","Y_UTM_Placette")) |> 
+  relocate(ID) |> 
+  distinct(Placette,.keep_all = TRUE)
+st_crs(juv_placette_sf) = 2972
 
-juv_ind_SWI <- terra::extract(SWI,juv_ind_sf,ID=FALSE,bind=TRUE) |> 
+juv_placette_SWI <- terra::extract(SWI,st_buffer(juv_placette_sf,4),ID=FALSE,bind=TRUE,fun="mean") |> 
   as.data.frame() |> 
-  rename(SWI=4)
+  rename(SWI=4) |> 
+  select(-ID)
 
-#Explore varaibility of TWI inside a same plot
-#ggplot(juv_ind_SWI[1:1000,],aes(x=Placette,y=SWI)) + geom_boxplot()
+
 ```
 
 ## LiDAR
@@ -552,38 +553,47 @@ Abondance2016 <- as.data.frame.matrix(table(
   factor(juvP$Placette[juvP$P16 == 1], levels = unique(juvP$Placette)),
     factor(juvP$sp[juvP$P16 == 1], levels = unique(juvP$sp))))
 # le factor(levels = unique()) permet de forcer le table() à garder toutes les espèces possibles et les parcelles possibles, et pas uniquement les lignes filtrées sur P16==1
+Abondance2016 <- Abondance2016 |> 
+  select(order(colnames(Abondance2016))) |> 
+  select(-`Schefflera decaphylla`,-`Symphonia sp. 2`,-`Symphonia sp. 3`,-`Symphonia sp. 4`) |> 
+  rename(NANA=12) |> 
+  select(-NANA) 
+  
 ```
 
 Preparation of the model :
 
 ```{r}
 #library(Hmsc)
+juv_lidar_placette<- juv_lidar %>% group_by(Placette) %>% select(ilum_2004) %>% slice(1) 
 
-# variables : 
-#ilum
-X <- juv_lidar %>% group_by(Placette) %>% select(ilum_2016) %>% slice(1)
+juv_lidar_placette <- juv_lidar_placette[match(juv_density$Placette,juv_lidar_placette$Placette),]
 
-# adding a variable for exploitation level :
-juv <- juv %>% mutate(exploitation = case_when(
-      PAR %in% c(11, 1, 6)  ~ 0,
-      PAR %in% c(9, 2, 7)   ~ 1,
-      PAR %in% c(10, 3, 5)  ~ 2,
-      PAR %in% c(12, 8, 4)  ~ 3))
+X_lidar=data.frame(row.names=juv_lidar_placette$Placette)
+for (j in 1:24) {
+  X_lidar[[paste("ilum",levels(as.factor(guy_ad_2015$sp))[j])]]=juv_lidar_placette$ilum_2004
+}
+X_density <- as.data.frame(juv_density,row.names = juv_density$Placette) |> 
+  select(-Placette,-PAR,-geometry)
 
-#Distance matrix
-dist_matrix <- juv_ind_dist |> 
-  st_drop_geometry() |> #drop the geometry value that cause problem in the pivot wider
-  select(Placette,sp,dist) |> 
-  pivot_wider(id_cols=Placette,names_from=sp,values_from=dist,values_fn = mean)#calculate the mean dist per species in the same placette
-#Create NAs when the focal species has none individuals in the plot( make sense) But how to replace those NAs by something making sense, is the model taking into account those NAs?
+X_SWI=data.frame(row.names=juv_placette_SWI$Placette)
+for (j in 1:24) {
+  X_SWI[[paste("SWI",levels(as.factor(guy_ad_2015$sp))[j])]]=juv_placette_SWI$SWI
+}
 
-X <- X %>% left_join(juv[, c("Placette", "exploitation")] %>%
-      distinct(), by = "Placette")
-X$Placette <- as.factor(X$Placette)
-#dist with the closer conspecific adult : not a plot variable so idk
-#X <- left_join(X, juv_ind_dist[,c(2,6)], by="ID")
+#Creation of the list variable (each element account for a species and is a df of the 3 variables)
+X <- vector("list",24)
+for (j in 1:24){
+  X[[j]]=as.data.frame(cbind(X_lidar[,j],X_density[,j],X_SWI[,j])) |> rename(ilum=1,density=2,SWI=3)
+  
+}
 
-XFormula <- ~ilum_2016 * as.factor(exploitation)
+
+
+
+
+
+XFormula <- ~ilum + density + SWI
 
 Y = Abondance2016
 
