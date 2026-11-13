@@ -542,6 +542,8 @@ for (j in 1:24){ #For each species
   }
   juv_density[[paste("dens",levels(as.factor(guy_ad_2015$sp))[j])]] = x #create a new column named dens genus species
 } #take around 10 minutes to run
+
+save(juv_density,file="juv_density.Rdata")
 ```
 
 # jSDM
@@ -624,6 +626,11 @@ mod_HMSC <- sampleMcmc(simul,
                       transient = 2000,
                       nChains = 4, 
                       nParallel = 4)
+```
+
+```{r}
+mcoda <- convertToCodaObject(mod_HMSC)
+plot()
 ```
 
 # Cox
