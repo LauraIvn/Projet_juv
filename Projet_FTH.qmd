@@ -18,6 +18,7 @@ library(sf)
 library(ggplot2)
 library(units)
 library(Hmsc)
+library(spatstat)
 ```
 
 ## Tidying
@@ -56,8 +57,6 @@ juv <- juv[!juv$ID %in% c(
   "2.6.4.5", "11.8.10.NA", "2.9.6.2", "4.5.8.10",
   "4.6.10.4", "5.3.8.52", "5.4.6.6", "5.5.7.51",
   "5.6.3.8", "5.6.6.4", "6.9.9.58", "8.6.10.6","8.6.4.9"), ] 
-
-
 
 ```
 
@@ -291,18 +290,19 @@ juv_NCI <- left_join(juv_NCI, NCI16, by="ID")
 SWI <- rast("donnees/Spatial/SWI_2019_filled_sinks.tif")
 crs(SWI) <- "epsg:2972"
 
-juv_ind_sf <- juv |> 
-  select("Placette","PAR","ID","X_UTM_Arbre_VRAI","Y_UTM_Arbre_VRAI") |> 
-  st_as_sf(coords=c("X_UTM_Arbre_VRAI","Y_UTM_Arbre_VRAI")) |> 
-  relocate(ID)
-st_crs(juv_ind_sf) = 2972
+juv_placette_sf <- juv |> 
+  select("Placette","PAR","ID","X_UTM_Placette","Y_UTM_Placette") |> 
+  st_as_sf(coords=c("X_UTM_Placette","Y_UTM_Placette")) |> 
+  relocate(ID) |> 
+  distinct(Placette,.keep_all = TRUE)
+st_crs(juv_placette_sf) = 2972
 
-juv_ind_SWI <- terra::extract(SWI,juv_ind_sf,ID=FALSE,bind=TRUE) |> 
+juv_placette_SWI <- terra::extract(SWI,st_buffer(juv_placette_sf,4),ID=FALSE,bind=TRUE,fun="mean") |> 
   as.data.frame() |> 
-  rename(SWI=4)
+  rename(SWI=4) |> 
+  select(-ID)
 
-#Explore varaibility of TWI inside a same plot
-#ggplot(juv_ind_SWI[1:1000,],aes(x=Placette,y=SWI)) + geom_boxplot()
+
 ```
 
 ## LiDAR
@@ -436,6 +436,9 @@ juv_lidar <- juv_lidar |>
   mutate(ilum_2013=ifelse(is.na(ilum_2013),0,ilum_2013)) |> 
   mutate(ilum_2015=ifelse(is.na(ilum_2015),0,ilum_2004)) |> 
   mutate(ilum_2016=ifelse(is.na(ilum_2016),0,ilum_2016))
+
+save(juv_lidar, file="juv_lidar.Rdata")
+
 # juv_ind <- juv |>
 #   select("ID","X_UTM_Arbre_VRAI","Y_UTM_Arbre_VRAI") |> 
 #   distinct(ID,.keep_all=TRUE) |> 
@@ -485,65 +488,228 @@ guy_ad_2015 <- left_join(guy_ad_pierrot,guy_max,join_by(sp)) |>
   mutate(dbh_ad=ifelse(is.na(dbh_ad) ,dbh_ad_pierrot,dbh_ad)) |> #SI NA on prend la valeur de pierrot
   mutate(dbh_ad=ifelse(is.na(dbh_ad),DBH_max/2,dbh_ad)) |> #Si c'est encore NA (pas présent dans la base de pierrot) on prend le dbh_max/2 -> j'ai l'impression que la seule espèce dans ce cas est eperua grandiflora
   filter(DBH>=dbh_ad) |>  #selection des arbres adultes de nos espèces
-  select(idTree,Xutm,Yutm,sp)
+  select(idTree,Xutm,Yutm,sp,Plot) 
 
 save(guy_ad_2015,file="guy_ad_2015.Rdata")
 ```
 
-## Distance of nearest con-specific adult
+## Density of conspecifics adults
 
 ```{r}
-guy_ad_2015_sf <- st_as_sf(guy_ad_2015,coords = c("Xutm","Yutm"))
-st_crs(guy_ad_2015_sf) <- 2972 #met le meme systeme de coordonnees
-juv_ind_dist <- left_join(juv_ind_sf,juv[,c("ID","sp")],join_by(ID)) # met l'sp sur juv_ind_sf
-#st_crs(juv_ind_dist) <- 2972
+guy_ad_plot <- split(guy_ad_2015 |> relocate(Xutm,Yutm),guy_ad_2015$Plot) #Create a df per plot
 
-dist <-c() #cree un vecteur vide
-for (i in 1:nrow(juv_ind_sf)){
-  dist[i]=min(st_distance(juv_ind_dist[i,5],guy_ad_2015_sf[which(guy_ad_2015_sf$sp==juv_ind_dist$sp[i]),3])) # boucle qui calcule la distance entre un juv de rang i et tous les adultes de la même espèce
-}# met à peu près 5 10 min à tourner
+#Density calculated in each separate plot are not comparable unless you fix certain parameter like the bandwidth and the resolution
+#Can calculate density for all species and plots and use thoses parameters ?
 
-juv_ind_dist <- juv_ind_dist |> 
-  mutate(dist=dist) |>  #Infinite distance for Schefflera
-  mutate(dist=ifelse(dist==Inf,1000,dist)) # Imputing really big distances
+plot <- read_sf("donnees/Spatial/OverallPlots.shp") #read shapefile
+bbox <- st_bbox(plot) # extract  the 4 corners of the shapefile to determinate the window of each plot
 
+Window = c(bbox["xmin"],bbox["xmax"],bbox["ymin"],bbox["ymax"])
 
+mean_density_ppp <- as.ppp(guy_ad_2015[,2:3],W=Window)
+
+bw <- attr(density(mean_density_ppp),"sigma") #Isolating the bandwidth
+
+create_ppp <- function(plot,sp,window){ as.data.frame(guy_ad_plot[plot])[which(as.data.frame(guy_ad_plot[plot])[,4]==sp),]|> 
+    as.ppp(W=window) }#Function creating a ppp object per plot named guy_add_ppp_plot. WARNING Window created based on trees but better with plot border
+
+guy_ad_ppp_matrix <- matrix(vector("list",12*24),nrow=12,ncol=24)#Create a matrix of list, each case will be the density of the species j and plot i
+sigma=c()
+
+for (i in 1:12){
+  bbox=st_bbox(plot[which(plot$Plot==i),])
+  window=c(bbox["xmin"],bbox["xmax"],bbox["ymin"],bbox["ymax"])
+  for (j in 1:24){
+   guy_ad_ppp_matrix[[i,j]]=density(create_ppp(i,levels(as.factor(guy_ad_2015$sp))[j],window))
+   sigma=c(sigma,attr(guy_ad_ppp_matrix[[i,j]],"sigma"))
+  }
+}
+
+#####Intersecting density with plot buffer#####
+#Creating sf placette object
+dist_buffer=20
+juv_density <- juv |> 
+  st_as_sf(coords = c("X_UTM_Placette","Y_UTM_Placette")) |> 
+  select(Placette,PAR) |> 
+  distinct(Placette,.keep_all = TRUE)
+  
+for (j in 1:24){ #For each species
+  x=c()
+  for (i in 1:nrow(juv_density)){ #For each ind
+    x=c(x,terra::extract(rast(guy_ad_ppp_matrix[[juv_density$PAR[i],j]]),st_buffer(juv_density[i,],dist = dist_buffer),fun="sum")[[2]]) #get the parcelles of the ind, calculate a buffer the placette, intersect the placette buffer with the right density object(species j and parcelle in which placette is)
+  
+  
+  }
+  juv_density[[paste("dens",levels(as.factor(guy_ad_2015$sp))[j])]] = x #create a new column named dens genus species
+} #take around 10 minutes to run
+
+save(juv_density,file="juv_density.Rdata")
 ```
 
 # jSDM
 
-Creation of abondance dataset and objects required for the hmsc function :
+jSDM with the Hmsc package for the 2016 year, with ilum as the main environmental variable
+
+Creation of 2016 abondance dataframe :
 
 ```{r}
-#install.packages("Hmsc")
+Abondance2016 <- as.data.frame.matrix(table(
+  factor(juvP$Placette[juvP$P16 == 1], levels = unique(juvP$Placette)),
+    factor(juvP$sp[juvP$P16 == 1], levels = unique(juvP$sp))))
+# le factor(levels = unique()) permet de forcer le table() à garder toutes les espèces possibles et les parcelles possibles, et pas uniquement les lignes filtrées sur P16==1
+Abondance2016 <- Abondance2016 |> 
+  select(order(colnames(Abondance2016))) |> 
+  select(-`Schefflera decaphylla`,-`Symphonia sp. 2`,-`Symphonia sp. 3`,-`Symphonia sp. 4`) |> 
+  rename(NANA=12) |> 
+  select(-NANA) 
+  
+```
+
+Preparation of the model :
+
+```{r}
+#library(Hmsc)
+juv_lidar_placette<- juv_lidar %>% group_by(Placette) %>% select(ilum_2004) %>% slice(1) 
+
+juv_lidar_placette <- juv_lidar_placette[match(juv_density$Placette,juv_lidar_placette$Placette),]
+
+X_lidar=data.frame(row.names=juv_lidar_placette$Placette)
+for (j in 1:24) {
+  X_lidar[[paste("ilum",levels(as.factor(guy_ad_2015$sp))[j])]]=juv_lidar_placette$ilum_2004
+}
+X_density <- as.data.frame(juv_density,row.names = juv_density$Placette) |> 
+  select(-Placette,-PAR,-geometry)
+
+X_SWI=data.frame(row.names=juv_placette_SWI$Placette)
+for (j in 1:24) {
+  X_SWI[[paste("SWI",levels(as.factor(guy_ad_2015$sp))[j])]]=juv_placette_SWI$SWI
+}
+
+#Creation of the list variable (each element account for a species and is a df of the 3 variables)
+X <- vector("list",24)
+for (j in 1:24){
+  X[[j]]=as.data.frame(cbind(X_lidar[,j],X_density[,j],X_SWI[,j])) |> rename(ilum=1,density=2,SWI=3)
+  
+}
 
 
-juv2016 <- juv[!is.na(juv$D16), ] #Pas sur que ce soit otpimum, il y a des ind qui sont présent en 2016 ais n'ont peut être pas fait l'objet d'une mesure (trop petit ou autre) je propose de plutot utiliser le df presence absence que j'ai fait qui prend en compte la varaible mort
 
-# retire le NA NA (1 ind)
-juv <- juv[!juv$sp=="NA NA", ]
 
-Abondance2016 <- as.data.frame.matrix(table(juv2016$Placette, juv2016$sp))
 
-# variables : dist au conspécifique le plus proche? et indice de lumière
-X <- juv_lidar %>% group_by(Placette) %>% select(ilum_2016) %>% slice(1)
-#X <- left_join(juv_lidar, dist)
 
-XFormula <- ~ilum_2016
+XFormula <- ~ilum + density + SWI
 
 Y = Abondance2016
 
-# Variable selection 
-studyDesign <- data.frame(Placette = as.factor(juv$Placette))
+# Study design :
+studyDesign <- juv %>% select("Placette","PAR") %>% distinct() %>% mutate(across(everything(), as.factor))
 
 # Variable structuring 
-plot <- HmscRandomLevel(units = studyDesign$Placette)
-ranlevels <- list(plot = plot)
+Placette <- HmscRandomLevel(units = studyDesign$Placette)
+PAR <- HmscRandomLevel(units = studyDesign$PAR)
+ranlevels <- list(Placette=Placette, PAR=PAR)
 
-#
+# Creating the model
 simul <- Hmsc(Y=Y, XData = X,
               XFormula = XFormula,
               studyDesign = studyDesign,
               ranLevels  = ranlevels,
-              distr = "probit")  
+              distr = "poisson")  
+```
+
+Running the model :
+
+```{r}
+mod_HMSC = sampleMcmc(simul,
+                      samples = 1000,
+                      thin = 1,
+                      transient = 2000,
+                      nChains = 4, 
+                      nParallel = 4)
+```
+
+```{r}
+mcoda <- convertToCodaObject(mod_HMSC)
+plot()
+```
+
+# Cox
+
+```{r}
+#install.packages("survival")
+#install.packages("survminer")
+library(survival)
+library(survminer)
+```
+
+Data preparation:
+
+Code à modifier (conditions pour la création de chaque objet) pour correspondre au df juv:
+
+```{r}
+juvsurvie <- juvP %>% filter(P92==0) %>%
+  mutate(Mort = ifelse(P93==0|P95==0|P02==0|P05==0|P08==0|P13==0|P16==0, 1, 0),
+           
+             date_mort = case_when(
+              P93 == 1 & P95 == 0 ~ 1995,
+              P95 == 1 & P02 == 0 ~ 2002,
+              P02 == 1 & P05 == 0 ~ 2005,
+              P05 == 1 & P08 == 0 ~ 2008,
+              P08 == 1 & P13 == 0 ~ 2013,
+              P13 == 1 & P16 == 0 ~ 2016), 
+            
+            date_recrutement = case_when(
+              P92 == 0 & P93 == 1 ~ 1993,
+              P93 == 0 & P95 == 1 ~ 1995,
+              P95 == 0 & P02 == 1 ~ 2002,
+              P02 == 0 & P05 == 1 ~ 2005,
+              P05 == 0 & P08 == 1 ~ 2008,
+              P08 == 0 & P13 == 1 ~ 2013,
+              P13 == 0 & P16 == 1 ~ 2016),
+            # et les recrues recensées mortes -> n'auront pas de previouscensusyear dans le tableau donc pas de time
+            
+            Previous_CensusYear = case_when(
+              date_mort == 1995 ~ 1992,
+              date_mort == 2002 ~ 1995,
+              date_mort == 2005 ~ 2002,
+              date_mort == 2008 ~ 2005,
+              date_mort == 2013 ~ 2008,
+              date_mort == 2016 ~ 2013)) %>%
+  
+  left_join(juv_lidar %>% select(ID, ilum_2004), by = "ID") %>%
+  
+  # décimale aléatoire pour l'âge au moment du décès (morta uniforme dans une/deux années)
+  mutate(Census_gap = date_mort - Previous_CensusYear) %>%
+  mutate(random = ifelse(!is.na(Census_gap), round(runif(n(), 0, Census_gap), 1), NA)) %>%
+  
+  mutate(age_mort = Previous_CensusYear - date_recrutement + random,
+         fin=2016,
+         duree = fin - date_recrutement,
+         Time=ifelse(Mort==1, date_mort, duree))
+```
+
+Running the model
+
+```{r}
+cox <- coxph(Surv(Time, Mort) ~ ilum_2004 * sp, data=juvsurvie)
+summary(cox)
+
+#plot
+ggsurvplot(survfit(cox), ggtheme=theme_minimal(), data=juvsurvie)
+```
+
+Model diagnostic
+
+```{r}
+# résidus indépendants du temps
+testph <- cox.zph(cox)
+test_ph
+
+ggcoxzph(testph)
+
+# Testing influential observations
+ggcoxdiagnostics(cox, type = "dfbeta" , linear.predictions = F, ggtheme=theme_bw())
+
+# Testing non linearity for continuous variables
+
 ```
