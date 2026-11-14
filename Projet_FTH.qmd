@@ -562,7 +562,15 @@ Abondance2016 <- Abondance2016 |>
   select(-`Schefflera decaphylla`,-`Symphonia sp. 2`,-`Symphonia sp. 3`,-`Symphonia sp. 4`) |> 
   rename(NANA=12) |> 
   select(-NANA) 
-  
+```
+
+Passage en présence-absence:\
+
+```{r}
+juvPA2016 <- as.data.frame.matrix(ifelse(Abondance2016==0, 0, 1))
+
+# cacaboudin il manque Platonia insignis, on le rajoute à la main pour le moment
+juvPA2016[["Platonia insignis"]] <- 0
 ```
 
 Preparation of the model :
@@ -574,9 +582,11 @@ juv_lidar_placette<- juv_lidar %>% group_by(Placette) %>% select(ilum_2004) %>% 
 juv_lidar_placette <- juv_lidar_placette[match(juv_density$Placette,juv_lidar_placette$Placette),]
 
 X_lidar=data.frame(row.names=juv_lidar_placette$Placette)
+
 for (j in 1:24) {
   X_lidar[[paste("ilum",levels(as.factor(guy_ad_2015$sp))[j])]]=juv_lidar_placette$ilum_2004
 }
+
 X_density <- as.data.frame(juv_density,row.names = juv_density$Placette) |> 
   select(-Placette,-PAR,-geometry)
 
@@ -593,13 +603,9 @@ for (j in 1:24){
 }
 
 
-
-
-
-
 XFormula <- ~ilum + density + SWI
 
-Y = Abondance2016
+Y = juvPA2016
 
 # Study design :
 studyDesign <- juv %>% select("Placette","PAR") %>% distinct() %>% mutate(across(everything(), as.factor))
@@ -621,16 +627,17 @@ Running the model :
 
 ```{r}
 mod_HMSC <- sampleMcmc(simul,
-                      samples = 1000,
+                      samples = 50000,
                       thin = 1,
-                      transient = 2000,
-                      nChains = 4, 
+                      transient = 10000,
+                      nChains = 3, 
                       nParallel = 4)
 ```
 
 ```{r}
 mcoda <- convertToCodaObject(mod_HMSC)
-plot()
+plot(mcoda$Beta)
+plot(mcoda$Beta[, 1])
 ```
 
 # Cox
@@ -643,8 +650,6 @@ library(survminer)
 ```
 
 Data preparation:
-
-Code à modifier (conditions pour la création de chaque objet) pour correspondre au df juv:
 
 ```{r}
 juvsurvie <- juvP %>% filter(P92==0) %>%
@@ -666,7 +671,7 @@ juvsurvie <- juvP %>% filter(P92==0) %>%
               P05 == 0 & P08 == 1 ~ 2008,
               P08 == 0 & P13 == 1 ~ 2013,
               P13 == 0 & P16 == 1 ~ 2016),
-            # et les recrues recensées mortes -> n'auront pas de previouscensusyear dans le tableau donc pas de time
+            # les recrues recensées mortes n'auront pas de previouscensusyear dans le tableau donc pas de time -> OK
             
             Previous_CensusYear = case_when(
               date_mort == 1995 ~ 1992,
@@ -678,10 +683,9 @@ juvsurvie <- juvP %>% filter(P92==0) %>%
   
   left_join(juv_lidar %>% select(ID, ilum_2004), by = "ID") %>%
   
-  # décimale aléatoire pour l'âge au moment du décès (morta uniforme dans une/deux années)
   mutate(Census_gap = date_mort - Previous_CensusYear) %>%
+  # décimale aléatoire pour l'âge au moment du décès
   mutate(random = ifelse(!is.na(Census_gap), round(runif(n(), 0, Census_gap), 1), NA)) %>%
-  
   mutate(age_mort = Previous_CensusYear - date_recrutement + random,
          fin=2016,
          duree = fin - date_recrutement,
@@ -694,7 +698,7 @@ Running the model
 cox <- coxph(Surv(Time, Mort) ~ ilum_2004 * sp, data=juvsurvie)
 summary(cox)
 
-#plot
+# Kaplan Meier curve
 ggsurvplot(survfit(cox), ggtheme=theme_minimal(), data=juvsurvie)
 ```
 
