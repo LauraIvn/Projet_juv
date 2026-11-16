@@ -6,7 +6,8 @@ editor: visual
 
 ## Quarto
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+Quarto enables you to weave together content and executable code into a finished document.
+To learn more about Quarto see <https://quarto.org>.
 
 ## Libraries
 
@@ -568,7 +569,8 @@ Passage en présence-absence:\
 ```{r}
 juvPA2016 <- as.data.frame.matrix(ifelse(Abondance2016==0, 0, 1))
 
-
+# cacaboudin il manque Platonia insignis, on le rajoute à la main pour le moment
+#juvPA2016[["Platonia insignis"]] <- 0
 ```
 
 Preparation of the model :
@@ -635,6 +637,7 @@ mod_HMSC <- sampleMcmc(simul,
 ```{r}
 mcoda <- convertToCodaObject(mod_HMSC)
 plot(mcoda$Beta)
+<<<<<<< HEAD
 plot(mcoda$Beta[, 4])
 
 ESS <- as.data.frame(effectiveSize(mcoda$Beta))
@@ -700,6 +703,11 @@ rhat_high_mean <- rhat_mean |>
   filter(rhat>=1.1)
 
 beta_CI_mean <- as.data.frame(HPDinterval(mcoda_mean$Beta[[1]]))
+=======
+plot(mcoda$Beta[, 1])
+
+autocorr.plot(mcoda$Beta[,1])
+>>>>>>> 16ed59611664e6a29c85245c45b6a02b3a0ffd1b
 ```
 
 # Cox
@@ -751,7 +759,7 @@ juvsurvie <- juvP %>% filter(P92==0) %>%
   mutate(age_mort = Previous_CensusYear - date_recrutement + random,
          fin=2016,
          duree = fin - date_recrutement,
-         Time=ifelse(Mort==1, date_mort, duree))
+         Time=ifelse(Mort==1, age_mort, duree))
 ```
 
 Running the model
@@ -759,6 +767,8 @@ Running the model
 ```{r}
 cox <- coxph(Surv(Time, Mort) ~ ilum_2004 * sp, data=juvsurvie)
 summary(cox)
+
+cox2 <- coxph(Surv(Time, Mort) ~ ilum_2004, data=juvsurvie[])
 
 # Kaplan Meier curve
 ggsurvplot(survfit(cox), ggtheme=theme_minimal(), data=juvsurvie)
