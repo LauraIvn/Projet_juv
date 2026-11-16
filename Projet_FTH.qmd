@@ -6,8 +6,7 @@ editor: visual
 
 ## Quarto
 
-Quarto enables you to weave together content and executable code into a finished document.
-To learn more about Quarto see <https://quarto.org>.
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
 
 ## Libraries
 
@@ -637,7 +636,6 @@ mod_HMSC <- sampleMcmc(simul,
 ```{r}
 mcoda <- convertToCodaObject(mod_HMSC)
 plot(mcoda$Beta)
-<<<<<<< HEAD
 plot(mcoda$Beta[, 4])
 
 ESS <- as.data.frame(effectiveSize(mcoda$Beta))
@@ -703,11 +701,7 @@ rhat_high_mean <- rhat_mean |>
   filter(rhat>=1.1)
 
 beta_CI_mean <- as.data.frame(HPDinterval(mcoda_mean$Beta[[1]]))
-=======
-plot(mcoda$Beta[, 1])
 
-autocorr.plot(mcoda$Beta[,1])
->>>>>>> 16ed59611664e6a29c85245c45b6a02b3a0ffd1b
 ```
 
 # Cox
