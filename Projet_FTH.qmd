@@ -255,7 +255,7 @@ NCI13 <- cbind(juv,x) |> # On récupère le vecteur comprenant tous les NCI dans
 #2016 indéniles : on prend 2015 guayfor
 data_NCI16 <- guy |> 
   filter(CensusYear == 2015, CodeAlive==TRUE) |> #Filtre sur l'année pour laquelle vous voulez calculer le NCI 
-  select(idTree,Xutm,Yutm,CensusYear, DBH) #Sélection des variables d'intérêt
+  select(idTree,Plot,Xutm,Yutm,CensusYear, DBH) #Sélection des variables d'intérêt
 
 
 x = c() #Initialisation du vecteur nul qui stockera les NCI calculés
@@ -594,6 +594,14 @@ for (j in 1:24) {
   X_SWI[[paste("SWI",levels(as.factor(guy_ad_2015$sp))[j])]]=juv_placette_SWI$SWI
 }
 
+#Scale variables
+X_lidar <- X_lidar |> 
+  mutate(across(1:24,scale))
+X_SWI <- X_SWI |> 
+  mutate(across(1:24,scale))
+X_density <- X_density |> 
+  mutate(across(1:24,scale))
+        
 #Creation of the list variable (each element account for a species and is a df of the 3 variables)
 X <- vector("list",24)
 for (j in 1:24){
@@ -602,7 +610,7 @@ for (j in 1:24){
 }
 
 
-XFormula <- ~ilum + density + SWI
+XFormula <- ~ilum + I(ilum^2) + density + SWI
 
 Y = juvPA2016
 
@@ -613,7 +621,6 @@ studyDesign <- juv %>% select("Placette","PAR") %>% distinct() %>% mutate(across
 Placette <- HmscRandomLevel(units = studyDesign$Placette)
 PAR <- HmscRandomLevel(units = studyDesign$PAR)
 ranlevels <- list(Placette=Placette, PAR=PAR)
-ranlevels_placette <- list(Placette=Placette)
 # Creating the model
 simul <- Hmsc(Y=Y, XData = X,
               XFormula = XFormula,
@@ -626,7 +633,7 @@ Running the model :
 
 ```{r}
 mod_HMSC <- sampleMcmc(simul,
-                      samples = 20000,
+                      samples = 2000,
                       thin = 10,
                       transient = 1000,
                       nChains = 3, 
@@ -644,44 +651,48 @@ rhat <- as.data.frame(gelman.diag(mcoda$Beta)$psrf[,2]) |>
 rhat_high <- rhat |> 
   filter(rhat>=1.1)
 
-beta_CI <- as.data.frame(HPDinterval(mcoda$Beta[[1]])) #Only on the first chain, don't know how to merge the 3 chains, maybe a mean of intervals
+beta_CI <- as.data.frame(HPDinterval(mcoda$Beta[[1]],prob=0.90)) #Only on the first chain, don't know how to merge the 3 chains, maybe a mean of intervals
 ```
 
 JSDM with mean_ilum
 
 ```{r}
-juv_lidar_placette_mean<- juv_lidar %>% group_by(Placette) %>% mutate(mean_ilum=(ilum_2004+ilum_2009+ilum_2013+ilum_2015+ilum_2016)/5) |> select(mean_ilum)%>% slice(1) 
+juv_NCI_placette<- juv_NCI %>% group_by(Placette) %>% select(NCI16.x)%>% slice(1) |> rename(NCI=2) #use NCI 2016
 
-juv_lidar_placette_mean <- juv_lidar_placette_mean[match(juv_density$Placette,juv_lidar_placette_mean$Placette),]
+juv_NCI_placette <- juv_NCI_placette[match(juv_density$Placette,juv_NCI_placette$Placette),]
 
-X_lidar_mean=data.frame(row.names=juv_lidar_placette_mean$Placette)
+X_NCI=data.frame(row.names=juv_NCI_placette$Placette)
+
+#scale NCI
+
 
 for (j in 1:24) {
-  X_lidar_mean[[paste("mean_ilum",levels(as.factor(guy_ad_2015$sp))[j])]]=juv_lidar_placette$ilum_2004
+  X_NCI[[paste("mean_ilum",levels(as.factor(guy_ad_2015$sp))[j])]]=juv_NCI_placette$NCI
 }
-
-X_mean<- vector("list",24)
+X_NCI <- X_NCI |> 
+  mutate(across(1:24,scale))
+X_2<- vector("list",24) #Global variable list
 for (j in 1:24){
-  X_mean[[j]]=as.data.frame(cbind(X_lidar_mean[,j],X_density[,j],X_SWI[,j])) |> rename(mean_ilum=1,density=2,SWI=3)
+  X_2[[j]]=as.data.frame(cbind(X_NCI[,j],X_density[,j],X_SWI[,j])) |> rename(NCI=1,density=2,SWI=3)
   
 }
 
 
-XFormula_mean <- ~mean_ilum + density + SWI
+XFormula_2 <- ~NCI + density + SWI
 
-simul_mean <- Hmsc(Y=Y, XData = X_mean,
-              XFormula = XFormula_mean,
+simul_2 <- Hmsc(Y=Y, XData = X_2,
+              XFormula = XFormula_2,
               studyDesign = studyDesign,
-              ranLevels  = ranlevels_placette,
+              ranLevels  = ranlevels,
               distr = "probit")
 ```
 
 Running the model
 
 ```{r}
-mod_HMSC_mean <- sampleMcmc(simul_mean,
-                       samples = 5000,
-                       thin = 1,
+mod_HMSC_2 <- sampleMcmc(simul_2,
+                       samples = 2000,
+                       thin = 10,
                        transient = 1000,
                        nChains = 3, 
                        nParallel = 4)
@@ -690,17 +701,17 @@ mod_HMSC_mean <- sampleMcmc(simul_mean,
 Check the model
 
 ```{r}
-mcoda_mean <- convertToCodaObject(mod_HMSC_mean)
+mcoda_2 <- convertToCodaObject(mod_HMSC_2)
 
-plot(mcoda_mean$Beta[,1:3])
+plot(mcoda_2$Beta[,1:3])
 
-ESS_mean <- as.data.frame(effectiveSize(mcoda_mean$Beta))
-rhat_mean <- as.data.frame(gelman.diag(mcoda_mean$Beta)$psrf[,2]) |> 
+ESS_2 <- as.data.frame(effectiveSize(mcoda_2$Beta))
+rhat_2 <- as.data.frame(gelman.diag(mcoda_2$Beta)$psrf[,2]) |> 
   rename("rhat"=1)
-rhat_high_mean <- rhat_mean |> 
+rhat_high_2 <- rhat_2 |> 
   filter(rhat>=1.1)
 
-beta_CI_mean <- as.data.frame(HPDinterval(mcoda_mean$Beta[[1]]))
+beta_CI_2 <- as.data.frame(HPDinterval(mcoda_2$Beta[[1]]))
 
 ```
 
