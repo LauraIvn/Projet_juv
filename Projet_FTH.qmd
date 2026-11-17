@@ -592,11 +592,6 @@ for (j in 1:24){
   
 }
 
-
-
-
-
-
 XFormula <- ~ilum + density + SWI
 
 Y = Abondance2016
