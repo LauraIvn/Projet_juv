@@ -256,7 +256,7 @@ NCI13 <- cbind(juv,x) |> # On récupère le vecteur comprenant tous les NCI dans
 #2016 indéniles : on prend 2015 guayfor
 data_NCI16 <- guy |> 
   filter(CensusYear == 2015, CodeAlive==TRUE) |> #Filtre sur l'année pour laquelle vous voulez calculer le NCI 
-  select(idTree,Xutm,Yutm,CensusYear, DBH) #Sélection des variables d'intérêt
+  select(idTree,Plot,Xutm,Yutm,CensusYear, DBH) #Sélection des variables d'intérêt
 
 
 x = c() #Initialisation du vecteur nul qui stockera les NCI calculés
@@ -562,7 +562,15 @@ Abondance2016 <- Abondance2016 |>
   select(-`Schefflera decaphylla`,-`Symphonia sp. 2`,-`Symphonia sp. 3`,-`Symphonia sp. 4`) |> 
   rename(NANA=12) |> 
   select(-NANA) 
-  
+```
+
+Passage en présence-absence:\
+
+```{r}
+juvPA2016 <- as.data.frame.matrix(ifelse(Abondance2016==0, 0, 1))
+
+# cacaboudin il manque Platonia insignis, on le rajoute à la main pour le moment
+#juvPA2016[["Platonia insignis"]] <- 0
 ```
 
 Preparation of the model :
@@ -574,9 +582,11 @@ juv_lidar_placette<- juv_lidar %>% group_by(Placette) %>% select(ilum_2004) %>% 
 juv_lidar_placette <- juv_lidar_placette[match(juv_density$Placette,juv_lidar_placette$Placette),]
 
 X_lidar=data.frame(row.names=juv_lidar_placette$Placette)
+
 for (j in 1:24) {
   X_lidar[[paste("ilum",levels(as.factor(guy_ad_2015$sp))[j])]]=juv_lidar_placette$ilum_2004
 }
+
 X_density <- as.data.frame(juv_density,row.names = juv_density$Placette) |> 
   select(-Placette,-PAR,-geometry)
 
@@ -585,6 +595,14 @@ for (j in 1:24) {
   X_SWI[[paste("SWI",levels(as.factor(guy_ad_2015$sp))[j])]]=juv_placette_SWI$SWI
 }
 
+#Scale variables
+X_lidar <- X_lidar |> 
+  mutate(across(1:24,scale))
+X_SWI <- X_SWI |> 
+  mutate(across(1:24,scale))
+X_density <- X_density |> 
+  mutate(across(1:24,scale))
+        
 #Creation of the list variable (each element account for a species and is a df of the 3 variables)
 X <- vector("list",24)
 for (j in 1:24){
@@ -592,9 +610,11 @@ for (j in 1:24){
   
 }
 
-XFormula <- ~ilum + density + SWI
 
-Y = Abondance2016
+
+XFormula <- ~ilum + I(ilum^2) + density + SWI
+
+Y = juvPA2016
 
 # Study design :
 studyDesign <- juv %>% select("Placette","PAR") %>% distinct() %>% mutate(across(everything(), as.factor))
@@ -603,29 +623,98 @@ studyDesign <- juv %>% select("Placette","PAR") %>% distinct() %>% mutate(across
 Placette <- HmscRandomLevel(units = studyDesign$Placette)
 PAR <- HmscRandomLevel(units = studyDesign$PAR)
 ranlevels <- list(Placette=Placette, PAR=PAR)
-
 # Creating the model
 simul <- Hmsc(Y=Y, XData = X,
               XFormula = XFormula,
               studyDesign = studyDesign,
               ranLevels  = ranlevels,
-              distr = "poisson")  
+              distr = "probit")  
 ```
 
 Running the model :
 
 ```{r}
-mod_HMSC = sampleMcmc(simul,
-                      samples = 1000,
-                      thin = 1,
-                      transient = 2000,
-                      nChains = 4, 
+mod_HMSC <- sampleMcmc(simul,
+                      samples = 2000,
+                      thin = 10,
+                      transient = 1000,
+                      nChains = 3, 
                       nParallel = 4)
 ```
 
 ```{r}
 mcoda <- convertToCodaObject(mod_HMSC)
-plot()
+plot(mcoda$Beta)
+plot(mcoda$Beta[, 4])
+
+ESS <- as.data.frame(effectiveSize(mcoda$Beta))
+rhat <- as.data.frame(gelman.diag(mcoda$Beta)$psrf[,2]) |> 
+  rename("rhat"=1)
+rhat_high <- rhat |> 
+  filter(rhat>=1.1)
+
+beta_CI <- as.data.frame(HPDinterval(mcoda$Beta[[1]],prob=0.90)) #Only on the first chain, don't know how to merge the 3 chains, maybe a mean of intervals
+```
+
+JSDM with mean_ilum
+
+```{r}
+juv_NCI_placette<- juv_NCI %>% group_by(Placette) %>% select(NCI16.x)%>% slice(1) |> rename(NCI=2) #use NCI 2016
+
+juv_NCI_placette <- juv_NCI_placette[match(juv_density$Placette,juv_NCI_placette$Placette),]
+
+X_NCI=data.frame(row.names=juv_NCI_placette$Placette)
+
+#scale NCI
+
+
+for (j in 1:24) {
+  X_NCI[[paste("mean_ilum",levels(as.factor(guy_ad_2015$sp))[j])]]=juv_NCI_placette$NCI
+}
+X_NCI <- X_NCI |> 
+  mutate(across(1:24,scale))
+X_2<- vector("list",24) #Global variable list
+for (j in 1:24){
+  X_2[[j]]=as.data.frame(cbind(X_NCI[,j],X_density[,j],X_SWI[,j])) |> rename(NCI=1,density=2,SWI=3)
+  
+}
+
+
+XFormula_2 <- ~NCI + density + SWI
+
+simul_2 <- Hmsc(Y=Y, XData = X_2,
+              XFormula = XFormula_2,
+              studyDesign = studyDesign,
+              ranLevels  = ranlevels,
+              distr = "probit")
+```
+
+Running the model
+
+```{r}
+mod_HMSC_2 <- sampleMcmc(simul_2,
+                       samples = 2000,
+                       thin = 10,
+                       transient = 1000,
+                       nChains = 3, 
+                       nParallel = 4)
+```
+
+Check the model
+
+```{r}
+mcoda_2 <- convertToCodaObject(mod_HMSC_2)
+
+plot(mcoda_2$Beta[,1:3])
+
+ESS_2 <- as.data.frame(effectiveSize(mcoda_2$Beta))
+rhat_2 <- as.data.frame(gelman.diag(mcoda_2$Beta)$psrf[,2]) |> 
+  rename("rhat"=1)
+rhat_high_2 <- rhat_2 |> 
+  filter(rhat>=1.1)
+
+beta_CI_2 <- as.data.frame(HPDinterval(mcoda_2$Beta[[1]]))
+
 ```
 
 # Cox
@@ -638,8 +727,6 @@ library(survminer)
 ```
 
 Data preparation:
-
-Code à modifier (conditions pour la création de chaque objet) pour correspondre au df juv:
 
 ```{r}
 juvsurvie <- juvP %>% filter(P92==0) %>%
@@ -661,7 +748,7 @@ juvsurvie <- juvP %>% filter(P92==0) %>%
               P05 == 0 & P08 == 1 ~ 2008,
               P08 == 0 & P13 == 1 ~ 2013,
               P13 == 0 & P16 == 1 ~ 2016),
-            # et les recrues recensées mortes -> n'auront pas de previouscensusyear dans le tableau donc pas de time
+            # les recrues recensées mortes n'auront pas de previouscensusyear dans le tableau donc pas de time -> OK
             
             Previous_CensusYear = case_when(
               date_mort == 1995 ~ 1992,
@@ -673,14 +760,13 @@ juvsurvie <- juvP %>% filter(P92==0) %>%
   
   left_join(juv_lidar %>% select(ID, ilum_2004), by = "ID") %>%
   
-  # décimale aléatoire pour l'âge au moment du décès (morta uniforme dans une/deux années)
   mutate(Census_gap = date_mort - Previous_CensusYear) %>%
+  # décimale aléatoire pour l'âge au moment du décès
   mutate(random = ifelse(!is.na(Census_gap), round(runif(n(), 0, Census_gap), 1), NA)) %>%
-  
   mutate(age_mort = Previous_CensusYear - date_recrutement + random,
          fin=2016,
          duree = fin - date_recrutement,
-         Time=ifelse(Mort==1, date_mort, duree))
+         Time=ifelse(Mort==1, age_mort, duree))
 ```
 
 Running the model
@@ -689,7 +775,9 @@ Running the model
 cox <- coxph(Surv(Time, Mort) ~ ilum_2004 * sp, data=juvsurvie)
 summary(cox)
 
-#plot
+cox2 <- coxph(Surv(Time, Mort) ~ ilum_2004, data=juvsurvie[])
+
+# Kaplan Meier curve
 ggsurvplot(survfit(cox), ggtheme=theme_minimal(), data=juvsurvie)
 ```
 
