@@ -6,7 +6,8 @@ editor: visual
 
 ## Quarto
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+Quarto enables you to weave together content and executable code into a finished document.
+To learn more about Quarto see <https://quarto.org>.
 
 ## Libraries
 
@@ -727,8 +728,8 @@ library(survminer)
 Data preparation:
 
 ```{r}
-juvsurvie <- juvP %>% filter(P92==0) %>%
-  mutate(Mort = ifelse(P93==0|P95==0|P02==0|P05==0|P08==0|P13==0|P16==0, 1, 0),
+juvsurvie <- juvP %>% filter(P92==0) %>% #on enlève les arbres présents au début
+  mutate(Mort = ifelse(P16==1, 0, 1), #si présent à la fin: pas mort
            
              date_mort = case_when(
               P93 == 1 & P95 == 0 ~ 1995,
@@ -756,6 +757,9 @@ juvsurvie <- juvP %>% filter(P92==0) %>%
               date_mort == 2013 ~ 2008,
               date_mort == 2016 ~ 2013)) %>%
   
+  #les recrutés en 2016 ont un time de 0: autant les enlever (jsp comment le modèle réagit à ça)
+  filter(!date_recrutement==2016) %>%
+  
   left_join(juv_lidar %>% select(ID, ilum_2004), by = "ID") %>%
   
   mutate(Census_gap = date_mort - Previous_CensusYear) %>%
@@ -765,6 +769,13 @@ juvsurvie <- juvP %>% filter(P92==0) %>%
          fin=2016,
          duree = fin - date_recrutement,
          Time=ifelse(Mort==1, age_mort, duree))
+```
+
+individus avec que des 0 -\> produisent des NA\
+Proviennent des NA de juvP construit à partir du commentaire "REC" ommis dans 700 arbres recrutés
+
+```{r}
+juvP[juvP$P92==0 & juvP$P93==0 &juvP$P95==0 &juvP$P02==0 &juvP$P05==0 &juvP$P08==0 &juvP$P13==0 &juvP$P16==0, ]
 ```
 
 Running the model
