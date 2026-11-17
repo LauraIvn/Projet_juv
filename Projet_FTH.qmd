@@ -611,6 +611,7 @@ for (j in 1:24){
 }
 
 
+
 XFormula <- ~ilum + I(ilum^2) + density + SWI
 
 Y = juvPA2016
