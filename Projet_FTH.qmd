@@ -93,7 +93,24 @@ juvP <- juv |> # Calcul présence absence de chaque individu à chaque année
   mutate(P05 = ifelse(C05=="M"&substring(CG,7,9)!="RES"|C05!="REC"&P02==0,0,1)) |># which(is.na(juv$D95)&!is.na(juv$D93)) pas mal d'ind qui ont n'ont pas de mesures à l'année n mais sont noté morts qu'à l'année n+1
   mutate(P08 = ifelse(C08=="M"&substring(CG,7,9)!="RES"|C08!="REC"&P05==0,0,1)) |>
   mutate(P13 = ifelse(C13=="M"&substring(CG,7,9)!="RES"|C13!="REC"&P08==0,0,1)) |>
-  mutate(P16 = ifelse(C16=="M"&substring(CG,7,9)!="RES"|C16!="REC"&P13==0,0,1)) 
+  mutate(P16 = ifelse(C16=="M"&substring(CG,7,9)!="RES"|C16!="REC"&P13==0,0,1))
+
+juvP <- juv |> 
+  mutate(P92 = ifelse(is.na(D92),0,1),
+         P93 = ifelse(is.na(D93),0,1),
+         P95 = ifelse(is.na(D95),0,1),
+         P02 = ifelse(is.na(D02),0,1),
+         P05 = ifelse(is.na(D05)&is.na(H05),0,1),
+         P08 = ifelse(is.na(D08)&is.na(H08),0,1),
+         P13 = ifelse(is.na(D13)&is.na(H13),0,1),
+         P16 = ifelse(is.na(D16)&is.na(H16),0,1),) |> #If Na consider as absent (0)
+  
+  mutate(P13 = ifelse(P13==0,ifelse(P08==1|P05==1|P02==1|P95==1|P93==1|P92==1 & P16==1,1,0  ),1), #if absent but present in the next year and one of the previous ones set to 1 insteAD of 0
+         P08 = ifelse(P08==0,ifelse(P05==1|P02==1|P95==1|P93==1|P92==1&P13==1,1,0),1),
+         P05 = ifelse(P05==0,ifelse(P02==1|P95==1|P93==1|P92==1&P08==1,1,0),1),
+         P02 = ifelse(P02==0,ifelse(P95==1|P93==1|P92==1&P05==1,1,0),1),
+         P95 = ifelse(P95==0,ifelse(P93==1|P92==1&P02==1,1,0),1),
+         P93 = ifelse(P93==0,ifelse(P92==1&P95==1,1,0),1))
 ```
 
 ### Abundance
