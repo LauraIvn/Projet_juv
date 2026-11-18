@@ -556,7 +556,7 @@ save(juv_density,file="juv_density.Rdata")
 
 # jSDM
 
-jSDM with the Hmsc package for the 2016 year, with ilum as the main environmental variable
+SDM with the Hmsc package for the 2016 year, with ilum as the main environmental variable
 
 Creation of 2016 abondance dataframe :
 
@@ -667,7 +667,7 @@ beta_CI <- as.data.frame(HPDinterval(mcoda$Beta[[1]],prob=0.90)) #Only on the fi
 JSDM with mean_ilum
 
 ```{r}
-juv_NCI_placette<- juv_NCI %>% group_by(Placette) %>% select(NCI16.x)%>% slice(1) |> rename(NCI=2) #use NCI 2016
+juv_NCI_placette<- juv_NCI %>% group_by(Placette) %>% select(NCI16)%>% slice(1) |> rename(NCI=2) #use NCI 2016
 
 juv_NCI_placette <- juv_NCI_placette[match(juv_density$Placette,juv_NCI_placette$Placette),]
 
@@ -688,7 +688,7 @@ for (j in 1:24){
 }
 
 
-XFormula_2 <- ~NCI + density + SWI
+XFormula_2 <- ~NCI + I(NCI^2)+ density + SWI
 
 simul_2 <- Hmsc(Y=Y, XData = X_2,
               XFormula = XFormula_2,
@@ -723,6 +723,42 @@ rhat_high_2 <- rhat_2 |>
 
 beta_CI_2 <- as.data.frame(HPDinterval(mcoda_2$Beta[[1]],prob = 0.9))
 
+```
+
+Plot
+
+```{r}
+postBeta = getPostEstimate(mod_HMSC, parName = "Beta")
+
+plotBeta(mod_HMSC,
+         post = postBeta, 
+         plotTree = F,
+         spNamesNumbers = c(T,F))
+```
+
+```{r}
+postBeta_2 = getPostEstimate(mod_HMSC_2, parName = "Beta")
+
+plotBeta(mod_HMSC_2,
+         post = postBeta_2, 
+         plotTree = F,
+         spNamesNumbers = c(T,F))
+```
+
+Variance partitioning
+
+```{r}
+VP = computeVariancePartitioning(mod_HMSC,group=c(1,1,1,2,3),groupnames = c("ilum","density","SWI"))
+
+plotVariancePartitioning(mod_HMSC, VP = VP,
+                         las = 2, horiz=F)
+```
+
+```{r}
+VP_2 = computeVariancePartitioning(mod_HMSC_2,group = c(1,1,1,2,3),groupnames = c("NCI","density","SWI"))
+
+plotVariancePartitioning(mod_HMSC_2, VP = VP_2,
+                         las = 2, horiz=F)
 ```
 
 # Cox
