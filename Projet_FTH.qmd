@@ -711,7 +711,7 @@ rhat_2 <- as.data.frame(gelman.diag(mcoda_2$Beta)$psrf[,2]) |>
 rhat_high_2 <- rhat_2 |> 
   filter(rhat>=1.1)
 
-beta_CI_2 <- as.data.frame(HPDinterval(mcoda_2$Beta[[1]]))
+beta_CI_2 <- as.data.frame(HPDinterval(mcoda_2$Beta[[1]],prob = 0.9))
 
 ```
 
