@@ -583,6 +583,8 @@ juvPA2016 <- as.data.frame.matrix(ifelse(Abondance2016==0, 0, 1))
 
 Preparation of the model :
 
+## Ilum
+
 ```{r}
 #library(Hmsc)
 juv_lidar_placette<- juv_lidar %>% group_by(Placette) %>% select(ilum_2004) %>% slice(1) 
@@ -652,7 +654,7 @@ mod_HMSC <- sampleMcmc(simul,
 
 ```{r}
 mcoda <- convertToCodaObject(mod_HMSC)
-plot(mcoda$Beta)
+
 plot(mcoda$Beta[, 4])
 
 ESS <- as.data.frame(effectiveSize(mcoda$Beta))
@@ -662,9 +664,15 @@ rhat_high <- rhat |>
   filter(rhat>=1.1)
 
 beta_CI <- as.data.frame(HPDinterval(mcoda$Beta[[1]],prob=0.90)) #Only on the first chain, don't know how to merge the 3 chains, maybe a mean of intervals
+y_predict <- computePredictedValues(mod_HMSC)
+evaluatemodel <- evaluateModelFit(mod_HMSC,y_predict)
+AUC <- evaluatemodel$AUC
+RMSE <- evaluatemodel$RMSE
+TjurR2 <- evaluatemodel$TjurR2
+
 ```
 
-JSDM with mean_ilum
+## NCI
 
 ```{r}
 juv_NCI_placette<- juv_NCI %>% group_by(Placette) %>% select(NCI16)%>% slice(1) |> rename(NCI=2) #use NCI 2016
@@ -722,27 +730,171 @@ rhat_high_2 <- rhat_2 |>
   filter(rhat>=1.1)
 
 beta_CI_2 <- as.data.frame(HPDinterval(mcoda_2$Beta[[1]],prob = 0.9))
-
+y_predict_2 <- computePredictedValues(mod_HMSC_2)
+evaluatemodel_2 <- evaluateModelFit(mod_HMSC_2,y_predict_2)
+AUC_2 <- evaluatemodel_2$AUC
+RMSE_2 <- evaluatemodel_2$RMSE
+TjurR2_2 <- evaluatemodel_2$TjurR2
 ```
 
-Plot
+## ilum_mean
+
+```{r}
+juv_lidar_placette_mean<- juv_lidar %>% group_by(Placette) %>%mutate(ilum_mean=(ilum_2004+ilum_2009+ilum_2013+ilum_2015+ilum_2016)/5) |> select(ilum_mean) %>% slice(1) 
+
+juv_lidar_placette_mean <- juv_lidar_placette_mean[match(juv_density$Placette,juv_lidar_placette_mean$Placette),]
+
+X_lidar_mean=data.frame(row.names=juv_lidar_placette_mean$Placette)
+
+for (j in 1:24) {
+  X_lidar_mean[[paste("ilum",levels(as.factor(guy_ad_2015$sp))[j])]]=juv_lidar_placette_mean$ilum_mean
+}
+#scale lidar mean
+X_lidar_mean <- X_lidar_mean |> 
+  mutate(across(1:24,scale))
+
+X_mean <- vector("list",24)
+for (j in 1:24){
+  X_mean[[j]]=as.data.frame(cbind(X_lidar_mean[,j],X_density[,j],X_SWI[,j])) |> rename(ilum=1,density=2,SWI=3)
+  
+}
+
+
+XFormula_mean <- ~ilum + I(ilum^2)+ density + SWI
+
+simul_mean <- Hmsc(Y=Y, XData = X_mean,
+                   XFormula = XFormula_mean,
+                   studyDesign = studyDesign,
+                ranLevels  = ranlevels,
+                distr = "probit")
+```
+
+```{r}
+mod_HMSC_mean <- sampleMcmc(simul_mean,
+                            samples = 2000,
+                            thin = 10,
+                            transient = 1000,
+                            nChains = 3, 
+                            nParallel = 4)
+```
+
+```{r}
+mcoda_mean <- convertToCodaObject(mod_HMSC_mean)
+
+plot(mcoda_mean$Beta[, 4])
+
+ESS_mean <- as.data.frame(effectiveSize(mcoda_mean$Beta))
+rhat_mean <- as.data.frame(gelman.diag(mcoda_mean$Beta)$psrf[,2]) |> 
+  rename("rhat"=1)
+rhat_high_mean <- rhat_mean |> 
+  filter(rhat>=1.1)
+
+beta_CI_mean <- as.data.frame(HPDinterval(mcoda_mean$Beta[[1]],prob=0.90)) #Only on the first chain, don't know how to merge the 3 chains, maybe a mean of intervals
+y_predict_mean <- computePredictedValues(mod_HMSC_mean)
+evaluatemodel_mean <- evaluateModelFit(mod_HMSC_mean,y_predict_mean)
+AUC_mean <- evaluatemodel_mean$AUC
+RMSE_mean <- evaluatemodel_mean$RMSE
+TjurR2_mean <- evaluatemodel_mean$TjurR2
+```
+
+## NCI_mean
+
+```{r}
+juv_NCI_placette_mean<- juv_NCI %>% group_by(Placette) %>% mutate(NCI_mean=(NCI92+NCI93+NCI95+NCI02+NCI05+NCI08+NCI13+NCI16)/8)%>%select(NCI_mean) |>  slice(1) |> rename(NCI=2) #use mean NCI
+
+juv_NCI_placette_mean <- juv_NCI_placette_mean[match(juv_density$Placette,juv_NCI_placette_mean$Placette),]
+
+X_NCI_mean=data.frame(row.names=juv_NCI_placette_mean$Placette)
+
+for (j in 1:24) {
+  X_NCI_mean[[paste("mean_ilum",levels(as.factor(guy_ad_2015$sp))[j])]]=juv_NCI_placette_mean$NCI
+}
+#Scale NCI
+X_NCI_mean <- X_NCI_mean |> 
+  mutate(across(1:24,scale))
+
+
+
+X_2_mean<- vector("list",24) #Global variable list
+for (j in 1:24){
+  X_2_mean[[j]]=as.data.frame(cbind(X_NCI_mean[,j],X_density[,j],X_SWI[,j])) |> rename(NCI=1,density=2,SWI=3)
+  
+}
+
+
+XFormula_2_mean <- ~NCI + I(NCI^2)+ density + SWI
+
+simul_2_mean <- Hmsc(Y=Y, XData = X_2_mean,
+                XFormula = XFormula_2_mean,
+                studyDesign = studyDesign,
+                ranLevels  = ranlevels,
+                distr = "probit")
+```
+
+```{r}
+mod_HMSC_2_mean <- sampleMcmc(simul_2_mean,
+                            samples = 2000,
+                            thin = 10,
+                            transient = 1000,
+                            nChains = 3, 
+                            nParallel = 4)
+```
+
+```{r}
+mcoda_2_mean <- convertToCodaObject(mod_HMSC_2_mean)
+
+plot(mcoda_2_mean$Beta[, 4])
+
+ESS_2_mean <- as.data.frame(effectiveSize(mcoda_2_mean$Beta))
+rhat_2_mean <- as.data.frame(gelman.diag(mcoda_2_mean$Beta)$psrf[,2]) |> 
+  rename("rhat"=1)
+rhat_high_2_mean <- rhat_2_mean |> 
+  filter(rhat>=1.1)
+
+beta_CI_2_mean <- as.data.frame(HPDinterval(mcoda_2_mean$Beta[[1]],prob=0.90)) #Only on the first chain, don't know how to merge the 3 chains, maybe a mean of intervals
+y_predict_2_mean <- computePredictedValues(mod_HMSC_2_mean)
+evaluatemodel_2_mean <- evaluateModelFit(mod_HMSC_2_mean,y_predict_2_mean)
+AUC_2_mean <- evaluatemodel_2_mean$AUC
+RMSE_2_mean <- evaluatemodel_2_mean$RMSE
+TjurR2_2_mean <- evaluatemodel_2_mean$TjurR2
+```
+
+## Plot
 
 ```{r}
 postBeta = getPostEstimate(mod_HMSC, parName = "Beta")
-
+par(mar=c(5,11,2.5,0))
 plotBeta(mod_HMSC,
          post = postBeta, 
          plotTree = F,
-         spNamesNumbers = c(T,F))
+         spNamesNumbers = c(T,F),colors=colorRampPalette(c("#9AC0CD","white","#EE9572")))
+```
+
+```{r}
+postBeta_mean = getPostEstimate(mod_HMSC_mean, parName = "Beta")
+par(mar=c(5,11,2.5,0))
+plotBeta(mod_HMSC_mean,
+         post = postBeta_mean, 
+         plotTree = F,
+         spNamesNumbers = c(T,F),colors=colorRampPalette(c("#9AC0CD","white","#EE9572")))
 ```
 
 ```{r}
 postBeta_2 = getPostEstimate(mod_HMSC_2, parName = "Beta")
-
+par(mar=c(5,11,2.5,0))
 plotBeta(mod_HMSC_2,
          post = postBeta_2, 
          plotTree = F,
-         spNamesNumbers = c(T,F))
+         spNamesNumbers = c(T,F),colors=colorRampPalette(c("#9AC0CD","white","#EE9572")))
+```
+
+```{r}
+postBeta_2_mean = getPostEstimate(mod_HMSC_2_mean, parName = "Beta")
+par(mar=c(5,11,2.5,0))
+plotBeta(mod_HMSC_2_mean,
+         post = postBeta_2_mean, 
+         plotTree = F,
+         spNamesNumbers = c(T,F),colors=colorRampPalette(c("#9AC0CD","white","#EE9572")))
 ```
 
 Variance partitioning
@@ -755,11 +907,27 @@ plotVariancePartitioning(mod_HMSC, VP = VP,
 ```
 
 ```{r}
+VP_mean = computeVariancePartitioning(mod_HMSC_mean,group=c(1,1,1,2,3),groupnames = c("ilum","density","SWI"))
+
+plotVariancePartitioning(mod_HMSC_mean, VP = VP_mean,
+                         las = 2, horiz=F)
+```
+
+```{r}
 VP_2 = computeVariancePartitioning(mod_HMSC_2,group = c(1,1,1,2,3),groupnames = c("NCI","density","SWI"))
 
 plotVariancePartitioning(mod_HMSC_2, VP = VP_2,
                          las = 2, horiz=F)
 ```
+
+```{r}
+VP_2_mean = computeVariancePartitioning(mod_HMSC_2_mean,group = c(1,1,1,2,3),groupnames = c("NCI","density","SWI"))
+
+plotVariancePartitioning(mod_HMSC_2_mean, VP = VP_2_mean,
+                         las = 2, horiz=F)
+```
+
+Mean ilum and mean NCI
 
 # Cox
 
