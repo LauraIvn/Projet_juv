@@ -6,8 +6,7 @@ editor: visual
 
 ## Quarto
 
-Quarto enables you to weave together content and executable code into a finished document.
-To learn more about Quarto see <https://quarto.org>.
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
 
 ## Libraries
 
@@ -86,15 +85,24 @@ juvAGR <- juv |>
 ### Presence/Absence
 
 ```{r}
-juvP <- juv |> # Calcul présence absence de chaque individu à chaque année
-  mutate(P92 = ifelse(!is.na(D92),1,0)) |> #Si il n'y a pas de mesure la première année on considère que l'ind n'était pas encore considére
-  mutate(P93 = ifelse(C93=="M"&substring(CG,7,9)!="RES"| C93!= "REC"&P92==0,0,1)) |> #L'ind est absent à l'année N: si il y a marqué Mort dans le commentaire ET qu'il n'a pas ressucité OU si ce n'est pas une recrue et qu'il était marqué absent l'année d'avant
-  mutate(P95 = ifelse(C95=="M"&substring(CG,7,9)!="RES"|C95!="REC"&P93==0,0,1)) |>  # ATTENTION: si on ajoute 2026 il faudra faire attention aux arbres ressucité puis remort!
-  mutate(P02 = ifelse(C02=="M"&substring(CG,7,9)!="RES"|C02!="REC"&P95==0,0,1)) |>
-  mutate(P05 = ifelse(C05=="M"&substring(CG,7,9)!="RES"|C05!="REC"&P02==0,0,1)) |># which(is.na(juv$D95)&!is.na(juv$D93)) pas mal d'ind qui ont n'ont pas de mesures à l'année n mais sont noté morts qu'à l'année n+1
-  mutate(P08 = ifelse(C08=="M"&substring(CG,7,9)!="RES"|C08!="REC"&P05==0,0,1)) |>
-  mutate(P13 = ifelse(C13=="M"&substring(CG,7,9)!="RES"|C13!="REC"&P08==0,0,1)) |>
-  mutate(P16 = ifelse(C16=="M"&substring(CG,7,9)!="RES"|C16!="REC"&P13==0,0,1)) 
+
+
+juvP <- juv |> 
+  mutate(P92 = ifelse(is.na(D92),0,1),
+         P93 = ifelse(is.na(D93),0,1),
+         P95 = ifelse(is.na(D95),0,1),
+         P02 = ifelse(is.na(D02),0,1),
+         P05 = ifelse(is.na(D05)&is.na(H05),0,1),
+         P08 = ifelse(is.na(D08)&is.na(H08),0,1),
+         P13 = ifelse(is.na(D13)&is.na(H13),0,1),
+         P16 = ifelse(is.na(D16)&is.na(H16),0,1),) |> #If Na consider as absent (0)
+  
+  mutate(P13 = ifelse(P13==0,ifelse(P08==1|P05==1|P02==1|P95==1|P93==1|P92==1 & P16==1,1,0  ),1), #if absent but present in the next year and one of the previous ones set to 1 insteAD of 0
+         P08 = ifelse(P08==0,ifelse(P05==1|P02==1|P95==1|P93==1|P92==1&P13==1,1,0),1),
+         P05 = ifelse(P05==0,ifelse(P02==1|P95==1|P93==1|P92==1&P08==1,1,0),1),
+         P02 = ifelse(P02==0,ifelse(P95==1|P93==1|P92==1&P05==1,1,0),1),
+         P95 = ifelse(P95==0,ifelse(P93==1|P92==1&P02==1,1,0),1),
+         P93 = ifelse(P93==0,ifelse(P92==1&P95==1,1,0),1))
 ```
 
 ### Abundance
@@ -548,7 +556,7 @@ save(juv_density,file="juv_density.Rdata")
 
 # jSDM
 
-jSDM with the Hmsc package for the 2016 year, with ilum as the main environmental variable
+SDM with the Hmsc package for the 2016 year, with ilum as the main environmental variable
 
 Creation of 2016 abondance dataframe :
 
@@ -574,6 +582,8 @@ juvPA2016 <- as.data.frame.matrix(ifelse(Abondance2016==0, 0, 1))
 ```
 
 Preparation of the model :
+
+## Ilum
 
 ```{r}
 #library(Hmsc)
@@ -644,7 +654,7 @@ mod_HMSC <- sampleMcmc(simul,
 
 ```{r}
 mcoda <- convertToCodaObject(mod_HMSC)
-plot(mcoda$Beta)
+
 plot(mcoda$Beta[, 4])
 
 ESS <- as.data.frame(effectiveSize(mcoda$Beta))
@@ -654,12 +664,18 @@ rhat_high <- rhat |>
   filter(rhat>=1.1)
 
 beta_CI <- as.data.frame(HPDinterval(mcoda$Beta[[1]],prob=0.90)) #Only on the first chain, don't know how to merge the 3 chains, maybe a mean of intervals
+y_predict <- computePredictedValues(mod_HMSC)
+evaluatemodel <- evaluateModelFit(mod_HMSC,y_predict)
+AUC <- evaluatemodel$AUC
+RMSE <- evaluatemodel$RMSE
+TjurR2 <- evaluatemodel$TjurR2
+
 ```
 
-JSDM with mean_ilum
+## NCI
 
 ```{r}
-juv_NCI_placette<- juv_NCI %>% group_by(Placette) %>% select(NCI16.x)%>% slice(1) |> rename(NCI=2) #use NCI 2016
+juv_NCI_placette<- juv_NCI %>% group_by(Placette) %>% select(NCI16)%>% slice(1) |> rename(NCI=2) #use NCI 2016
 
 juv_NCI_placette <- juv_NCI_placette[match(juv_density$Placette,juv_NCI_placette$Placette),]
 
@@ -680,7 +696,7 @@ for (j in 1:24){
 }
 
 
-XFormula_2 <- ~NCI + density + SWI
+XFormula_2 <- ~NCI + I(NCI^2)+ density + SWI
 
 simul_2 <- Hmsc(Y=Y, XData = X_2,
               XFormula = XFormula_2,
@@ -713,9 +729,220 @@ rhat_2 <- as.data.frame(gelman.diag(mcoda_2$Beta)$psrf[,2]) |>
 rhat_high_2 <- rhat_2 |> 
   filter(rhat>=1.1)
 
-beta_CI_2 <- as.data.frame(HPDinterval(mcoda_2$Beta[[1]]))
-
+beta_CI_2 <- as.data.frame(HPDinterval(mcoda_2$Beta[[1]],prob = 0.9))
+y_predict_2 <- computePredictedValues(mod_HMSC_2)
+evaluatemodel_2 <- evaluateModelFit(mod_HMSC_2,y_predict_2)
+AUC_2 <- evaluatemodel_2$AUC
+RMSE_2 <- evaluatemodel_2$RMSE
+TjurR2_2 <- evaluatemodel_2$TjurR2
 ```
+
+## ilum_mean
+
+```{r}
+juv_lidar_placette_mean<- juv_lidar %>% group_by(Placette) %>%mutate(ilum_mean=(ilum_2004+ilum_2009+ilum_2013+ilum_2015+ilum_2016)/5) |> select(ilum_mean) %>% slice(1) 
+
+juv_lidar_placette_mean <- juv_lidar_placette_mean[match(juv_density$Placette,juv_lidar_placette_mean$Placette),]
+
+X_lidar_mean=data.frame(row.names=juv_lidar_placette_mean$Placette)
+
+for (j in 1:24) {
+  X_lidar_mean[[paste("ilum",levels(as.factor(guy_ad_2015$sp))[j])]]=juv_lidar_placette_mean$ilum_mean
+}
+#scale lidar mean
+X_lidar_mean <- X_lidar_mean |> 
+  mutate(across(1:24,scale))
+
+X_mean <- vector("list",24)
+for (j in 1:24){
+  X_mean[[j]]=as.data.frame(cbind(X_lidar_mean[,j],X_density[,j],X_SWI[,j])) |> rename(ilum=1,density=2,SWI=3)
+  
+}
+
+
+XFormula_mean <- ~ilum + I(ilum^2)+ density + SWI
+
+simul_mean <- Hmsc(Y=Y, XData = X_mean,
+                   XFormula = XFormula_mean,
+                   studyDesign = studyDesign,
+                ranLevels  = ranlevels,
+                distr = "probit")
+```
+
+```{r}
+mod_HMSC_mean <- sampleMcmc(simul_mean,
+                            samples = 2000,
+                            thin = 10,
+                            transient = 1000,
+                            nChains = 3, 
+                            nParallel = 4)
+```
+
+```{r}
+mcoda_mean <- convertToCodaObject(mod_HMSC_mean)
+
+plot(mcoda_mean$Beta[, 4])
+
+ESS_mean <- as.data.frame(effectiveSize(mcoda_mean$Beta))
+rhat_mean <- as.data.frame(gelman.diag(mcoda_mean$Beta)$psrf[,2]) |> 
+  rename("rhat"=1)
+rhat_high_mean <- rhat_mean |> 
+  filter(rhat>=1.1)
+
+beta_CI_mean <- as.data.frame(HPDinterval(mcoda_mean$Beta[[1]],prob=0.90)) #Only on the first chain, don't know how to merge the 3 chains, maybe a mean of intervals
+y_predict_mean <- computePredictedValues(mod_HMSC_mean)
+evaluatemodel_mean <- evaluateModelFit(mod_HMSC_mean,y_predict_mean)
+AUC_mean <- evaluatemodel_mean$AUC
+RMSE_mean <- evaluatemodel_mean$RMSE
+TjurR2_mean <- evaluatemodel_mean$TjurR2
+```
+
+## NCI_mean
+
+```{r}
+juv_NCI_placette_mean<- juv_NCI %>% group_by(Placette) %>% mutate(NCI_mean=(NCI92+NCI93+NCI95+NCI02+NCI05+NCI08+NCI13+NCI16)/8)%>%select(NCI_mean) |>  slice(1) |> rename(NCI=2) #use mean NCI
+
+juv_NCI_placette_mean <- juv_NCI_placette_mean[match(juv_density$Placette,juv_NCI_placette_mean$Placette),]
+
+X_NCI_mean=data.frame(row.names=juv_NCI_placette_mean$Placette)
+
+for (j in 1:24) {
+  X_NCI_mean[[paste("mean_ilum",levels(as.factor(guy_ad_2015$sp))[j])]]=juv_NCI_placette_mean$NCI
+}
+#Scale NCI
+X_NCI_mean <- X_NCI_mean |> 
+  mutate(across(1:24,scale))
+
+
+
+X_2_mean<- vector("list",24) #Global variable list
+for (j in 1:24){
+  X_2_mean[[j]]=as.data.frame(cbind(X_NCI_mean[,j],X_density[,j],X_SWI[,j])) |> rename(NCI=1,density=2,SWI=3)
+  
+}
+
+
+XFormula_2_mean <- ~NCI + I(NCI^2)+ density + SWI
+
+simul_2_mean <- Hmsc(Y=Y, XData = X_2_mean,
+                XFormula = XFormula_2_mean,
+                studyDesign = studyDesign,
+                ranLevels  = ranlevels,
+                distr = "probit")
+```
+
+```{r}
+mod_HMSC_2_mean <- sampleMcmc(simul_2_mean,
+                            samples = 2000,
+                            thin = 10,
+                            transient = 1000,
+                            nChains = 3, 
+                            nParallel = 4)
+```
+
+```{r}
+mcoda_2_mean <- convertToCodaObject(mod_HMSC_2_mean)
+
+plot(mcoda_2_mean$Beta[, 4])
+
+ESS_2_mean <- as.data.frame(effectiveSize(mcoda_2_mean$Beta))
+rhat_2_mean <- as.data.frame(gelman.diag(mcoda_2_mean$Beta)$psrf[,2]) |> 
+  rename("rhat"=1)
+rhat_high_2_mean <- rhat_2_mean |> 
+  filter(rhat>=1.1)
+
+beta_CI_2_mean <- as.data.frame(HPDinterval(mcoda_2_mean$Beta[[1]],prob=0.90)) #Only on the first chain, don't know how to merge the 3 chains, maybe a mean of intervals
+y_predict_2_mean <- computePredictedValues(mod_HMSC_2_mean)
+evaluatemodel_2_mean <- evaluateModelFit(mod_HMSC_2_mean,y_predict_2_mean)
+save()
+AUC_2_mean <- evaluatemodel_2_mean$AUC
+RMSE_2_mean <- evaluatemodel_2_mean$RMSE
+TjurR2_2_mean <- evaluatemodel_2_mean$TjurR2
+```
+
+## Plot
+
+```{r}
+postBeta = getPostEstimate(mod_HMSC, parName = "Beta")
+covnames <- mod_HMSC$covNames #store true covnames just in case
+mod_HMSC$covNames <- c("Intercept","Ilum","Ilum²","Density","SWI") #Renaming HMSC covnames
+par(mar=c(5,11,2.5,0))
+plotBeta(mod_HMSC,
+         post = postBeta, 
+         plotTree = F,
+         spNamesNumbers = c(T,F),
+         covNamesNumbers = c(T,F),
+         param = "Sign",
+         colors=colorRampPalette(c("#9AC0CD","white","#EE9572")),cex = c(0.9,0.8,1))
+```
+
+```{r}
+postBeta_mean = getPostEstimate(mod_HMSC_mean, parName = "Beta")
+par(mar=c(5,11,2.5,0))
+plotBeta(mod_HMSC_mean,
+         post = postBeta_mean, 
+         plotTree = F,
+         spNamesNumbers = c(T,F),
+         covNamesNumbers = c(T,F),
+         param = "Sign",
+         colors=colorRampPalette(c("#9AC0CD","white","#EE9572")),cex = c(0.9,0.8,1))
+```
+
+```{r}
+postBeta_2 = getPostEstimate(mod_HMSC_2, parName = "Beta")
+par(mar=c(5,11,2.5,0))
+plotBeta(mod_HMSC_2,
+         post = postBeta_2, 
+         plotTree = F,
+         spNamesNumbers = c(T,F),
+         covNamesNumbers = c(T,F),
+         param = "Sign",
+         colors=colorRampPalette(c("#9AC0CD","white","#EE9572")),cex = c(0.9,0.8,1))
+```
+
+```{r}
+postBeta_2_mean = getPostEstimate(mod_HMSC_2_mean, parName = "Beta")
+par(mar=c(5,11,2.5,0))
+plotBeta(mod_HMSC_2_mean,
+         post = postBeta_2_mean, 
+         plotTree = F,
+         spNamesNumbers = c(T,F),
+         covNamesNumbers = c(T,F),
+         param = "Sign",
+         colors=colorRampPalette(c("#9AC0CD","white","#EE9572")),cex = c(0.9,0.8,1))
+```
+
+Variance partitioning
+
+```{r}
+VP = computeVariancePartitioning(mod_HMSC,group=c(1,1,1,2,3),groupnames = c("ilum","density","SWI"))
+
+plotVariancePartitioning(mod_HMSC, VP = VP,
+                         las = 2, horiz=F)
+```
+
+```{r}
+VP_mean = computeVariancePartitioning(mod_HMSC_mean,group=c(1,1,1,2,3),groupnames = c("ilum","density","SWI"))
+
+plotVariancePartitioning(mod_HMSC_mean, VP = VP_mean,
+                         las = 2, horiz=F)
+```
+
+```{r}
+VP_2 = computeVariancePartitioning(mod_HMSC_2,group = c(1,1,1,2,3),groupnames = c("NCI","density","SWI"))
+
+plotVariancePartitioning(mod_HMSC_2, VP = VP_2,
+                         las = 2, horiz=F)
+```
+
+```{r}
+VP_2_mean = computeVariancePartitioning(mod_HMSC_2_mean,group = c(1,1,1,2,3),groupnames = c("NCI","density","SWI"))
+
+plotVariancePartitioning(mod_HMSC_2_mean, VP = VP_2_mean,
+                         las = 2, horiz=F)
+```
+
+Mean ilum and mean NCI
 
 # Cox
 
@@ -729,8 +956,8 @@ library(survminer)
 Data preparation:
 
 ```{r}
-juvsurvie <- juvP %>% filter(P92==0) %>%
-  mutate(Mort = ifelse(P93==0|P95==0|P02==0|P05==0|P08==0|P13==0|P16==0, 1, 0),
+juvsurvie <- juvP %>% filter(P92==0) %>% #on enlève les arbres présents au début
+  mutate(Mort = ifelse(P16==1, 0, 1), #si présent à la fin: pas mort
            
              date_mort = case_when(
               P93 == 1 & P95 == 0 ~ 1995,
@@ -758,6 +985,9 @@ juvsurvie <- juvP %>% filter(P92==0) %>%
               date_mort == 2013 ~ 2008,
               date_mort == 2016 ~ 2013)) %>%
   
+  #les recrutés en 2016 ont un time de 0: autant les enlever (jsp comment le modèle réagit à ça)
+  filter(!date_recrutement==2016) %>%
+  
   left_join(juv_lidar %>% select(ID, ilum_2004), by = "ID") %>%
   
   mutate(Census_gap = date_mort - Previous_CensusYear) %>%
@@ -767,6 +997,13 @@ juvsurvie <- juvP %>% filter(P92==0) %>%
          fin=2016,
          duree = fin - date_recrutement,
          Time=ifelse(Mort==1, age_mort, duree))
+```
+
+individus avec que des 0 -\> produisent des NA\
+Proviennent des NA de juvP construit à partir du commentaire "REC" ommis dans 700 arbres recrutés
+
+```{r}
+juvP[juvP$P92==0 & juvP$P93==0 &juvP$P95==0 &juvP$P02==0 &juvP$P05==0 &juvP$P08==0 &juvP$P13==0 &juvP$P16==0, ]
 ```
 
 Running the model

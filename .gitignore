@@ -6,4 +6,10 @@ donnees
 Projet EFT 2026
 .RDataTmp1
 .RDataTmp2
+<<<<<<< HEAD
 .RDataTmp3
+=======
+guy_ad_2015.Rdata
+juv_density.Rdata
+juv_lidar.Rdata
+>>>>>>> 22bff1ee62d7443b3d319b77eca1f9d64c5c9b36
