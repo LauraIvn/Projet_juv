@@ -18,6 +18,7 @@ library(ggplot2)
 library(units)
 library(Hmsc)
 library(spatstat)
+library(gridExtra)
 ```
 
 ## Tidying
@@ -878,8 +879,10 @@ plotBeta(mod_HMSC,
 
 ```{r}
 postBeta_mean = getPostEstimate(mod_HMSC_mean, parName = "Beta")
+covnames_mean <- mod_HMSC_mean$covNames #store true covnames just in case
+mod_HMSC_mean$covNames <- c("Intercept","Ilum","Ilum²","Density","SWI")
 par(mar=c(5,11,2.5,0))
-plotBeta(mod_HMSC_mean,
+plot_beta_2_mean=plotBeta(mod_HMSC_mean,
          post = postBeta_mean, 
          plotTree = F,
          spNamesNumbers = c(T,F),
@@ -890,8 +893,10 @@ plotBeta(mod_HMSC_mean,
 
 ```{r}
 postBeta_2 = getPostEstimate(mod_HMSC_2, parName = "Beta")
+covnames_2 <- mod_HMSC_2$covNames #store true covnames just in case
+mod_HMSC_2$covNames <- c("Intercept","Ilum","Ilum²","Density","SWI")
 par(mar=c(5,11,2.5,0))
-plotBeta(mod_HMSC_2,
+plotBeta_2 = plotBeta(mod_HMSC_2,
          post = postBeta_2, 
          plotTree = F,
          spNamesNumbers = c(T,F),
@@ -902,15 +907,20 @@ plotBeta(mod_HMSC_2,
 
 ```{r}
 postBeta_2_mean = getPostEstimate(mod_HMSC_2_mean, parName = "Beta")
+covnames_2_mean <- mod_HMSC_2_mean$covNames #store true covnames just in case
+mod_HMSC_2_mean$covNames <- c("Intercept","Ilum","Ilum²","Density","SWI")
 par(mar=c(5,11,2.5,0))
-plotBeta(mod_HMSC_2_mean,
+plot_beta_2_mean=plotBeta(mod_HMSC_2_mean,
          post = postBeta_2_mean, 
          plotTree = F,
          spNamesNumbers = c(T,F),
          covNamesNumbers = c(T,F),
          param = "Sign",
-         colors=colorRampPalette(c("#9AC0CD","white","#EE9572")),cex = c(0.9,0.8,1))
+         colors=colorRampPalette(c("#9AC0CD","white","#EE9572")),cex = c(0.9,0.8,1),newplot = FALSE)
+
 ```
+
+Final plotbetaplot using mean ilum and mean NCI to compare them
 
 Variance partitioning
 
