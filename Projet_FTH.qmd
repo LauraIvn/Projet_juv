@@ -854,6 +854,7 @@ rhat_high_2_mean <- rhat_2_mean |>
 beta_CI_2_mean <- as.data.frame(HPDinterval(mcoda_2_mean$Beta[[1]],prob=0.90)) #Only on the first chain, don't know how to merge the 3 chains, maybe a mean of intervals
 y_predict_2_mean <- computePredictedValues(mod_HMSC_2_mean)
 evaluatemodel_2_mean <- evaluateModelFit(mod_HMSC_2_mean,y_predict_2_mean)
+save()
 AUC_2_mean <- evaluatemodel_2_mean$AUC
 RMSE_2_mean <- evaluatemodel_2_mean$RMSE
 TjurR2_2_mean <- evaluatemodel_2_mean$TjurR2
@@ -863,11 +864,15 @@ TjurR2_2_mean <- evaluatemodel_2_mean$TjurR2
 
 ```{r}
 postBeta = getPostEstimate(mod_HMSC, parName = "Beta")
+mod_HMSC$covNames <- c("Intercept","Ilum","Ilum²","Density","SWI") #Renaming HMSC covnames
 par(mar=c(5,11,2.5,0))
 plotBeta(mod_HMSC,
          post = postBeta, 
          plotTree = F,
-         spNamesNumbers = c(T,F),colors=colorRampPalette(c("#9AC0CD","white","#EE9572")))
+         spNamesNumbers = c(T,F),
+         covNamesNumbers = c(T,F),
+         param = "Sign",
+         colors=colorRampPalette(c("#9AC0CD","white","#EE9572")),cex = c(0.9,0.8,1))
 ```
 
 ```{r}
@@ -876,7 +881,7 @@ par(mar=c(5,11,2.5,0))
 plotBeta(mod_HMSC_mean,
          post = postBeta_mean, 
          plotTree = F,
-         spNamesNumbers = c(T,F),colors=colorRampPalette(c("#9AC0CD","white","#EE9572")))
+         spNamesNumbers = c(T,F),colors=colorRampPalette(c("#9AC0CD","white","#EE9572")),covNamesNumbers = c(TRUE,FALSE))
 ```
 
 ```{r}
@@ -885,7 +890,7 @@ par(mar=c(5,11,2.5,0))
 plotBeta(mod_HMSC_2,
          post = postBeta_2, 
          plotTree = F,
-         spNamesNumbers = c(T,F),colors=colorRampPalette(c("#9AC0CD","white","#EE9572")))
+         spNamesNumbers = c(T,F),colors=colorRampPalette(c("#9AC0CD","white","#EE9572")),covNamesNumbers = c(TRUE,FALSE))
 ```
 
 ```{r}
@@ -894,7 +899,7 @@ par(mar=c(5,11,2.5,0))
 plotBeta(mod_HMSC_2_mean,
          post = postBeta_2_mean, 
          plotTree = F,
-         spNamesNumbers = c(T,F),colors=colorRampPalette(c("#9AC0CD","white","#EE9572")))
+         spNamesNumbers = c(T,F),colors=colorRampPalette(c("#9AC0CD","white","#EE9572")),covNamesNumbers = c(TRUE,FALSE))
 ```
 
 Variance partitioning
