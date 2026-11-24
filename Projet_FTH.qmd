@@ -741,7 +741,7 @@ TjurR2_2 <- evaluatemodel_2$TjurR2
 ## ilum_mean
 
 ```{r}
-juv_lidar_placette_mean<- juv_lidar %>% group_by(Placette) %>%mutate(ilum_mean=(ilum_2004+ilum_2009+ilum_2013+ilum_2015+ilum_2016)/5) |> select(ilum_mean) %>% slice(1) 
+juv_lidar_placette_mean<- juv_lidar %>% group_by(Placette) %>%mutate(ilum_mean=(ilum_2004+ilum_2009+ilum_2015)/3) |> select(ilum_mean) %>% slice(1) 
 
 juv_lidar_placette_mean <- juv_lidar_placette_mean[match(juv_density$Placette,juv_lidar_placette_mean$Placette),]
 
@@ -801,7 +801,7 @@ TjurR2_mean <- evaluatemodel_mean$TjurR2
 ## NCI_mean
 
 ```{r}
-juv_NCI_placette_mean<- juv_NCI %>% group_by(Placette) %>% mutate(NCI_mean=(NCI92+NCI93+NCI95+NCI02+NCI05+NCI08+NCI13+NCI16)/8)%>%select(NCI_mean) |>  slice(1) |> rename(NCI=2) #use mean NCI
+juv_NCI_placette_mean<- juv_NCI %>% group_by(Placette) %>% mutate(NCI_mean=(NCI95+NCI02+NCI05+NCI08+NCI13+NCI16)/8)%>%select(NCI_mean) |>  slice(1) |> rename(NCI=2) #use mean NCI
 
 juv_NCI_placette_mean <- juv_NCI_placette_mean[match(juv_density$Placette,juv_NCI_placette_mean$Placette),]
 
@@ -855,10 +855,98 @@ rhat_high_2_mean <- rhat_2_mean |>
 beta_CI_2_mean <- as.data.frame(HPDinterval(mcoda_2_mean$Beta[[1]],prob=0.90)) #Only on the first chain, don't know how to merge the 3 chains, maybe a mean of intervals
 y_predict_2_mean <- computePredictedValues(mod_HMSC_2_mean)
 evaluatemodel_2_mean <- evaluateModelFit(mod_HMSC_2_mean,y_predict_2_mean)
-save()
+
 AUC_2_mean <- evaluatemodel_2_mean$AUC
 RMSE_2_mean <- evaluatemodel_2_mean$RMSE
 TjurR2_2_mean <- evaluatemodel_2_mean$TjurR2
+```
+
+## ilum and NCI delta
+
+```{r}
+juv_NCI_placette_delta<- juv_NCI %>% group_by(Placette) %>% mutate(NCI_delta=NCI16-NCI95)%>%select(NCI_delta) |>  slice(1) |> rename(NCI=2) #use mean NCI
+
+juv_NCI_placette_delta <- juv_NCI_placette_delta[match(juv_density$Placette,juv_NCI_placette_delta$Placette),]
+
+X_NCI_delta=data.frame(row.names=juv_NCI_placette_delta$Placette)
+
+for (j in 1:24) {
+  X_NCI_delta[[paste("mean_ilum",levels(as.factor(guy_ad_2015$sp))[j])]]=juv_NCI_placette_delta$NCI
+}
+#Scale NCI
+X_NCI_delta <- X_NCI_delta |> 
+  mutate(across(1:24,scale))
+
+
+
+X_2_delta<- vector("list",24) #Global variable list
+for (j in 1:24){
+  X_2_delta[[j]]=as.data.frame(cbind(X_NCI_mean[,j],X_NCI_delta[,j],X_density[,j],X_SWI[,j])) |> rename(NCI=1,NCI_delta=2,density=3,SWI=4)
+  
+}
+
+
+juv_lidar_placette_delta<- juv_lidar %>% group_by(Placette) %>%mutate(ilum_delta=ilum_2016-ilum_2004) |> select(ilum_delta) %>% slice(1) 
+
+juv_lidar_placette_delta <- juv_lidar_placette_delta[match(juv_density$Placette,juv_lidar_placette_delta$Placette),]
+
+X_lidar_delta=data.frame(row.names=juv_lidar_placette_delta$Placette)
+
+for (j in 1:24) {
+  X_lidar_delta[[paste("ilum",levels(as.factor(guy_ad_2015$sp))[j])]]=juv_lidar_placette_delta$ilum_delta
+}
+#scale lidar mean
+X_lidar_delta <- X_lidar_delta |> 
+  mutate(across(1:24,scale))
+
+X_tot <- vector("list",24)
+for (j in 1:24){
+  X_tot[[j]]=as.data.frame(cbind(X_lidar_mean[,j],X_lidar_delta[,j],X_NCI_mean[,j],X_NCI_delta[,j], X_density[,j],X_SWI[,j])) |> rename(ilum=1,ilum_delta=2,NCI =3,NCI_delta =4,density=5,SWI=6)
+  
+}
+
+
+
+
+XFormula_tot <- ~ilum + I(ilum^2)+ ilum_delta+ NCI + I(NCI^2)+ NCI_delta + density * SWI
+
+simul_tot <- Hmsc(Y=Y, XData = X_tot,
+                  XFormula = XFormula_tot,
+                  studyDesign = studyDesign,
+                  ranLevels  = ranlevels,
+                  distr = "probit")
+
+```
+
+## Model selection
+
+```{r}
+mod_HMSC_tot <- sampleMcmc(simul_tot,
+                            samples = 2000,
+                            thin = 10,
+                            transient = 1000,
+                            nChains = 3, 
+                            nParallel = 4)
+```
+
+```{r}
+y_predict_tot <- computePredictedValues(mod_HMSC_tot)
+evaluatemodel_tot <- evaluateModelFit(mod_HMSC_tot,y_predict_tot)
+AUC_tot <- evaluatemodel_tot$AUC
+RMSE_tot <- evaluatemodel_tot$RMSE
+TjurR2_tot <- evaluatemodel_tot$TjurR2
+```
+
+```{r}
+postBeta_tot = getPostEstimate(mod_HMSC_tot, parName = "Beta")
+
+par(mar=c(5,11,2.5,0))
+plotBeta(mod_HMSC_tot,
+         post = postBeta_tot, 
+         plotTree = F,
+         spNamesNumbers = c(T,F),
+         covNamesNumbers = c(T,F),
+         param = "Sign",)
 ```
 
 ## Plot
@@ -882,7 +970,7 @@ postBeta_mean = getPostEstimate(mod_HMSC_mean, parName = "Beta")
 covnames_mean <- mod_HMSC_mean$covNames #store true covnames just in case
 mod_HMSC_mean$covNames <- c("Intercept","Ilum","Ilum²","Density","SWI")
 par(mar=c(5,11,2.5,0))
-plot_beta_2_mean=plotBeta(mod_HMSC_mean,
+plotBeta(mod_HMSC_mean,
          post = postBeta_mean, 
          plotTree = F,
          spNamesNumbers = c(T,F),
@@ -894,9 +982,9 @@ plot_beta_2_mean=plotBeta(mod_HMSC_mean,
 ```{r}
 postBeta_2 = getPostEstimate(mod_HMSC_2, parName = "Beta")
 covnames_2 <- mod_HMSC_2$covNames #store true covnames just in case
-mod_HMSC_2$covNames <- c("Intercept","Ilum","Ilum²","Density","SWI")
+mod_HMSC_2$covNames <- c("Intercept","NCI","NCI²","Density","SWI")
 par(mar=c(5,11,2.5,0))
-plotBeta_2 = plotBeta(mod_HMSC_2,
+plotBeta(mod_HMSC_2,
          post = postBeta_2, 
          plotTree = F,
          spNamesNumbers = c(T,F),
@@ -908,9 +996,9 @@ plotBeta_2 = plotBeta(mod_HMSC_2,
 ```{r}
 postBeta_2_mean = getPostEstimate(mod_HMSC_2_mean, parName = "Beta")
 covnames_2_mean <- mod_HMSC_2_mean$covNames #store true covnames just in case
-mod_HMSC_2_mean$covNames <- c("Intercept","Ilum","Ilum²","Density","SWI")
+mod_HMSC_2_mean$covNames <- c("Intercept","NCI","NCI²","Density","SWI")
 par(mar=c(5,11,2.5,0))
-plot_beta_2_mean=plotBeta(mod_HMSC_2_mean,
+plotBeta(mod_HMSC_2_mean,
          post = postBeta_2_mean, 
          plotTree = F,
          spNamesNumbers = c(T,F),
