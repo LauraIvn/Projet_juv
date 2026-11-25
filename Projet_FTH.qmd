@@ -946,7 +946,21 @@ plotBeta(mod_HMSC_tot,
          plotTree = F,
          spNamesNumbers = c(T,F),
          covNamesNumbers = c(T,F),
-         param = "Sign",)
+         param = "Sign",
+         colors=colorRampPalette(c("#9AC0CD","white","#EE9572")),cex = c(0.9,0.8,1))
+```
+
+```{r}
+VP_tot = computeVariancePartitioning(mod_HMSC_tot,group=c(1,1,1,2,3,3,4,5,6,7),groupnames = c("ilum","ilum_delta","NCI","NCI_delta","density","SWI","density*SWI"))
+
+plotVariancePartitioning(mod_HMSC_tot, VP = VP_tot,
+                         las = 2, horiz=F)
+```
+
+```{r}
+corr_df=data.frame(X_lidar_mean[,1],X_lidar_delta[,1],X_NCI_mean[,1],X_NCI_delta[,1],X_SWI[,1],X_density[,1],X_density[,2],X_density[,3],X_density[,4],X_density[,5],X_density[,6],X_density[,7],X_density[,8],X_density[,9],X_density[,10],X_density[,11],X_density[,12],X_density[,13],X_density[,14],X_density[,15],X_density[,16],X_density[,17],X_density[,18],X_density[,19],X_density[,20],X_density[,21],X_density[,22],X_density[,23],X_density[,24])
+corr=cor(corr_df)
+corrplot(corr)
 ```
 
 ## Plot
